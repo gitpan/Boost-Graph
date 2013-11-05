@@ -1,4 +1,5 @@
-// (C) Copyright Jonathan Turkanis 2003.
+// (C) Copyright 2008 CodeRage, LLC (turkanis at coderage dot com)
+// (C) Copyright 2003-2007 Jonathan Turkanis
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt.)
 
@@ -82,7 +83,7 @@ struct write_device_impl<ostream_tag> {
     {
         typedef typename char_type_of<T>::type          char_type;
         typedef BOOST_IOSTREAMS_CHAR_TRAITS(char_type)  traits_type;
-        return !traits_type::eq_int_type( t.rdbuf()->s.sputc(),
+        return !traits_type::eq_int_type( t.rdbuf()->sputc(c),
                                           traits_type::eof() );
     }
 

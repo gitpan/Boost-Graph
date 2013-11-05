@@ -2,13 +2,9 @@
 //  Copyright (c) 2000-2002
 //  Joerg Walter, Mathias Koch
 //
-//  Permission to use, copy, modify, distribute and sell this software
-//  and its documentation for any purpose is hereby granted without fee,
-//  provided that the above copyright notice appear in all copies and
-//  that both that copyright notice and this permission notice appear
-//  in supporting documentation.  The authors make no representations
-//  about the suitability of this software for any purpose.
-//  It is provided "as is" without express or implied warranty.
+//  Distributed under the Boost Software License, Version 1.0. (See
+//  accompanying file LICENSE_1_0.txt or copy at
+//  http://www.boost.org/LICENSE_1_0.txt)
 //
 //  The authors gratefully acknowledge the support of
 //  GeNeSys mbH & Co. KG in producing this work.
@@ -24,7 +20,18 @@
 
 namespace boost { namespace numeric { namespace ublas {
 
-    // Array based banded matrix class
+    /** \brief A banded matrix of values of type \c T.
+     *
+     * For a \f$(mxn)\f$-dimensional banded matrix with \f$l\f$ lower and \f$u\f$ upper diagonals and 
+     * \f$0 \leq i < m\f$ and \f$0 \leq j < n\f$, if \f$i>j+l\f$ or \f$i<j-u\f$ then \f$b_{i,j}=0\f$. 
+     * The default storage for banded matrices is packed. Orientation and storage can also be specified. 
+     * Default is \c row_major and and unbounded_array. It is \b not required by the storage to initialize 
+     * elements of the matrix.
+     *
+     * \tparam T the type of object stored in the matrix (like double, float, complex, etc...)
+     * \tparam L the storage organization. It can be either \c row_major or \c column_major. Default is \c row_major
+     * \tparam A the type of Storage array. Default is \c unbounded_array
+     */
     template<class T, class L, class A>
     class banded_matrix:
         public matrix_container<banded_matrix<T, L, A> > {
@@ -179,21 +186,24 @@ namespace boost { namespace numeric { namespace ublas {
 #ifdef BOOST_UBLAS_OWN_BANDED
             const size_type k = (std::max) (i, j);
             const size_type l = lower_ + j - i;
-            if (k < (std::max) (size1_, size2_) &&
-                l < lower_ + 1 + upper_)
-                return data () [layout_type::element (k, (std::max) (size1_, size2_),
+            if (! (k < (std::max) (size1_, size2_) &&
+                  l < lower_ + 1 + upper_) ) {
+                bad_index ().raise ();
+                // NEVER reached
+            }
+            return data () [layout_type::element (k, (std::max) (size1_, size2_),
                                                        l, lower_ + 1 + upper_)];
 #else
             const size_type k = j;
             const size_type l = upper_ + i - j;
-            if (k < size2_ &&
-                l < lower_ + 1 + upper_)
-                return data () [layout_type::element (k, size2_,
+            if (! (k < size2_ &&
+                   l < lower_ + 1 + upper_) ) {
+                bad_index ().raise ();
+                // NEVER reached
+            }
+            return data () [layout_type::element (k, size2_,
                                                        l, lower_ + 1 + upper_)];
 #endif
-            bad_index ().raise ();
-                // arbitary return value
-            return const_cast<reference>(zero_);
         }
 
         // Element assignment
@@ -203,7 +213,7 @@ namespace boost { namespace numeric { namespace ublas {
         }
         BOOST_UBLAS_INLINE
         void erase_element (size_type i, size_type j) {
-            return (operator () (i, j) = value_type/*zero*/());
+            operator () (i, j) = value_type/*zero*/();
         }
 
         // Zeroing
@@ -411,6 +421,10 @@ namespace boost { namespace numeric { namespace ublas {
             const_reference operator * () const {
                 return (*this) () (it1_, it2_);
             }
+            BOOST_UBLAS_INLINE
+            const_reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -545,6 +559,10 @@ namespace boost { namespace numeric { namespace ublas {
             BOOST_UBLAS_INLINE
             reference operator * () const {
                 return (*this) ().at_element (it1_, it2_);
+            }
+            BOOST_UBLAS_INLINE
+            reference operator [] (difference_type n) const {
+                return *(*this + n);
             }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
@@ -686,6 +704,10 @@ namespace boost { namespace numeric { namespace ublas {
             const_reference operator * () const {
                 return (*this) () (it1_, it2_);
             }
+            BOOST_UBLAS_INLINE
+            const_reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -821,6 +843,10 @@ namespace boost { namespace numeric { namespace ublas {
             reference operator * () const {
                 return (*this) ().at_element (it1_, it2_);
             }
+            BOOST_UBLAS_INLINE
+            reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -955,7 +981,21 @@ namespace boost { namespace numeric { namespace ublas {
     typename banded_matrix<T, L, A>::const_value_type banded_matrix<T, L, A>::zero_ = value_type/*zero*/();
 
 
-    // Diagonal matrix class
+    /** \brief A diagonal matrix of values of type \c T, which is a specialization of a banded matrix
+     *
+     * For a \f$(m\times m)\f$-dimensional diagonal matrix, \f$0 \leq i < m\f$ and \f$0 \leq j < m\f$, 
+     * if \f$i\neq j\f$ then \f$b_{i,j}=0\f$. The default storage for diagonal matrices is packed. 
+     * Orientation and storage can also be specified. Default is \c row major \c unbounded_array. 
+     *
+     * As a specialization of a banded matrix, the constructor of the diagonal matrix creates 
+     * a banded matrix with 0 upper and lower diagonals around the main diagonal and the matrix is 
+     * obviously a square matrix. Operations are optimized based on these 2 assumptions. It is 
+     * \b not required by the storage to initialize elements of the matrix.  
+     *
+     * \tparam T the type of object stored in the matrix (like double, float, complex, etc...)
+     * \tparam L the storage organization. It can be either \c row_major or \c column_major. Default is \c row_major
+     * \tparam A the type of Storage array. Default is \c unbounded_array
+     */
     template<class T, class L, class A>
     class diagonal_matrix:
         public banded_matrix<T, L, A> {
@@ -998,7 +1038,18 @@ namespace boost { namespace numeric { namespace ublas {
         }
     };
 
-    // Banded matrix adaptor class
+    /** \brief A banded matrix adaptator: convert a any matrix into a banded matrix expression
+     *
+     * For a \f$(m\times n)\f$-dimensional matrix, the \c banded_adaptor will provide a banded matrix
+     * with \f$l\f$ lower and \f$u\f$ upper diagonals and \f$0 \leq i < m\f$ and \f$0 \leq j < n\f$,
+     * if \f$i>j+l\f$ or \f$i<j-u\f$ then \f$b_{i,j}=0\f$. 
+     *
+     * Storage and location are based on those of the underlying matrix. This is important because
+     * a \c banded_adaptor does not copy the matrix data to a new place. Therefore, modifying values
+     * in a \c banded_adaptor matrix will also modify the underlying matrix too.
+     *
+     * \tparam M the type of matrix used to generate a banded matrix
+     */
     template<class M>
     class banded_adaptor:
         public matrix_expression<banded_adaptor<M> > {
@@ -1363,6 +1414,10 @@ namespace boost { namespace numeric { namespace ublas {
 #endif
                 return (*this) () (i, j);
             }
+            BOOST_UBLAS_INLINE
+            const_reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -1510,6 +1565,10 @@ namespace boost { namespace numeric { namespace ublas {
                     return *it1_;
 #endif
                 return (*this) () (i, j);
+            }
+            BOOST_UBLAS_INLINE
+            reference operator [] (difference_type n) const {
+                return *(*this + n);
             }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
@@ -1665,6 +1724,10 @@ namespace boost { namespace numeric { namespace ublas {
 #endif
                 return (*this) () (i, j);
             }
+            BOOST_UBLAS_INLINE
+            const_reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -1813,6 +1876,10 @@ namespace boost { namespace numeric { namespace ublas {
 #endif
                 return (*this) () (i, j);
             }
+            BOOST_UBLAS_INLINE
+            reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -1941,16 +2008,33 @@ namespace boost { namespace numeric { namespace ublas {
     template <class M>
     struct vector_temporary_traits< banded_adaptor<M> >
     : vector_temporary_traits< M > {} ;
+    template <class M>
+    struct vector_temporary_traits< const banded_adaptor<M> >
+    : vector_temporary_traits< M > {} ;
 
     template <class M>
     struct matrix_temporary_traits< banded_adaptor<M> >
+    : matrix_temporary_traits< M > {} ;
+    template <class M>
+    struct matrix_temporary_traits< const banded_adaptor<M> >
     : matrix_temporary_traits< M > {} ;
 
 
     template<class M>
     typename banded_adaptor<M>::const_value_type banded_adaptor<M>::zero_ = value_type/*zero*/();
 
-    // Diagonal matrix adaptor class
+    /** \brief A diagonal matrix adaptator: convert a any matrix into a diagonal matrix expression
+     *
+     * For a \f$(m\times m)\f$-dimensional matrix, the \c diagonal_adaptor will provide a diagonal matrix
+     * with \f$0 \leq i < m\f$ and \f$0 \leq j < m\f$, if \f$i\neq j\f$ then \f$b_{i,j}=0\f$. 
+     *
+     * Storage and location are based on those of the underlying matrix. This is important because
+     * a \c diagonal_adaptor does not copy the matrix data to a new place. Therefore, modifying values
+     * in a \c diagonal_adaptor matrix will also modify the underlying matrix too.
+     *
+     * \tparam M the type of matrix used to generate the diagonal matrix
+     */
+
     template<class M>
     class diagonal_adaptor:
         public banded_adaptor<M> {

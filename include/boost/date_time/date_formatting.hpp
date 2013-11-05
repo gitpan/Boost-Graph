@@ -4,9 +4,9 @@
 /* Copyright (c) 2002-2004 CrystalClear Software, Inc.
  * Use, modification and distribution is subject to the 
  * Boost Software License, Version 1.0. (See accompanying
- * file LICENSE-1.0 or http://www.boost.org/LICENSE-1.0)
+ * file LICENSE_1_0.txt or http://www.boost.org/LICENSE_1_0.txt)
  * Author: Jeff Garland, Bart Garst
- * $Date: 2004/08/29 19:31:11 $
+ * $Date: 2012-09-30 16:25:22 -0700 (Sun, 30 Sep 2012) $
  */
 
 #include "boost/date_time/iso_format.hpp"
@@ -27,14 +27,15 @@ namespace date_time {
   template<class month_type, class format_type, class charT=char>
   class month_formatter
   {
+    typedef std::basic_ostream<charT> ostream_type;
   public:
     //! Formats a month as as string into an ostream
     /*! This function demands that month_type provide
      *  functions for converting to short and long strings
      *  if that capability is used.
      */
-    static std::basic_ostream<charT>& format_month(const month_type& month,
-                                      std::basic_ostream<charT>& os)
+    static ostream_type& format_month(const month_type& month,
+                                      ostream_type &os)
     {
       switch (format_type::month_format()) 
       {
@@ -53,7 +54,9 @@ namespace date_time {
           os << std::setw(2) << std::setfill(os.widen('0')) << month.as_number();
           break;
         }
-     
+        default:
+          break;
+          
       }
       return os;
     } // format_month
@@ -78,7 +81,13 @@ namespace date_time {
     {
       typedef typename ymd_type::month_type month_type;
       std::basic_ostringstream<charT> ss;
+
+      // Temporarily switch to classic locale to prevent possible formatting
+      // of year with comma or other character (for example 2,008).
+      ss.imbue(std::locale::classic());
       ss << ymd.year;
+      ss.imbue(std::locale());
+
       if (format_type::has_date_sep_chars()) {
         ss << format_type::month_sep_char();
       }

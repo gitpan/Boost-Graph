@@ -29,37 +29,41 @@
 #include <boost/mpl/int.hpp>
 #include <boost/mpl/integral_c.hpp>
 #include <boost/mpl/integral_c_tag.hpp>
+#include <boost/mpl/aux_/nttp_decl.hpp>
 
 #include <boost/serialization/level_enum.hpp>
-#include <boost/serialization/traits.hpp>
 
 namespace boost {
 namespace serialization {
 
+struct basic_traits;
+
 // default serialization implementation level
 template<class T>
-struct implementation_level {
+struct implementation_level_impl {
     template<class U>
     struct traits_class_level {
-        typedef  BOOST_DEDUCED_TYPENAME U::level type;
+        typedef BOOST_DEDUCED_TYPENAME U::level type;
     };
 
     typedef mpl::integral_c_tag tag;
+    // note: at least one compiler complained w/o the full qualification
+    // on basic traits below
     typedef
         BOOST_DEDUCED_TYPENAME mpl::eval_if<
-            is_base_and_derived<basic_traits, T>,
-            traits_class_level<T>,
+            is_base_and_derived<boost::serialization::basic_traits, T>,
+            traits_class_level< T >,
         //else
         BOOST_DEDUCED_TYPENAME mpl::eval_if<
-            is_fundamental<T>,
+            is_fundamental< T >,
             mpl::int_<primitive_type>,
         //else
         BOOST_DEDUCED_TYPENAME mpl::eval_if<
-            is_class<T>,
+            is_class< T >,
             mpl::int_<object_class_info>,
         //else
         BOOST_DEDUCED_TYPENAME mpl::eval_if<
-            is_array<T>,
+            is_array< T >,
             #if BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x560))
                 mpl::int_<not_serializable>,
             #else
@@ -67,7 +71,7 @@ struct implementation_level {
             #endif
         //else
         BOOST_DEDUCED_TYPENAME mpl::eval_if<
-            is_enum<T>,
+            is_enum< T >,
             //#if BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x560))
             //    mpl::int_<not_serializable>,
             //#else
@@ -81,12 +85,17 @@ struct implementation_level {
         >
         >::type type;
         // vc 7.1 doesn't like enums here
-    BOOST_STATIC_CONSTANT(int, value = implementation_level::type::value);
+    BOOST_STATIC_CONSTANT(int, value = type::value);
 };
 
+template<class T>
+struct implementation_level : 
+    public implementation_level_impl<const T>
+{
+};
 
-template<class T, enum level_type L>
-inline bool operator>=(implementation_level<T> t, enum level_type l)
+template<class T, BOOST_MPL_AUX_NTTP_DECL(int, L) >
+inline bool operator>=(implementation_level< T > t, enum level_type l)
 {
     return t.value >= (int)l;
 }
@@ -100,13 +109,13 @@ inline bool operator>=(implementation_level<T> t, enum level_type l)
     namespace boost {                                    \
     namespace serialization {                            \
     template <>                                          \
-    struct implementation_level< T >                     \
+    struct implementation_level_impl< const T >                     \
     {                                                    \
         typedef mpl::integral_c_tag tag;                 \
         typedef mpl::int_< E > type;                     \
         BOOST_STATIC_CONSTANT(                           \
             int,                                         \
-            value = implementation_level::type::value    \
+            value = implementation_level_impl::type::value    \
         );                                               \
     };                                                   \
     }                                                    \

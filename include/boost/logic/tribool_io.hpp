@@ -104,9 +104,10 @@ template<>
 inline std::basic_string<char> get_default_indeterminate_name<char>()
 { return "indeterminate"; }
 
-#if BOOST_WORKAROUND(BOOST_MSVC, <= 1200)
+#if BOOST_WORKAROUND(BOOST_MSVC, < 1300)
 // VC++ 6.0 chokes on the specialization below, so we're stuck without 
-// wchar_t support. What a pain.
+// wchar_t support. What a pain. TODO: it might just need a the template 
+// parameter as function parameter...
 #else
 #  ifndef BOOST_NO_WCHAR_T
 /// Returns the wide character string L"indeterminate".
@@ -139,7 +140,8 @@ public:
   indeterminate_name() : name_(get_default_indeterminate_name<CharT>()) {}
 
   /// Construct the facet with the given name for the indeterminate value
-  explicit indeterminate_name(const string_type& name) : name_(name) {}
+  explicit indeterminate_name(const string_type& initial_name)
+  : name_(initial_name) {}
 
   /// Returns the name for the indeterminate value
   string_type name() const { return name_; }

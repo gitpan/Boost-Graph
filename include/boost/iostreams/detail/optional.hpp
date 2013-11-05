@@ -1,4 +1,5 @@
-// (C) Copyright Jonathan Turkanis 2005.
+// (C) Copyright 2008 CodeRage, LLC (turkanis at coderage dot com)
+// (C) Copyright 2005-2007 Jonathan Turkanis
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt.)
 
@@ -17,7 +18,7 @@
 # pragma once
 #endif
 
-#include <cassert>
+#include <boost/assert.hpp>
 #include <boost/mpl/int.hpp>
 #include <boost/type_traits/aligned_storage.hpp>
 #include <boost/type_traits/alignment_of.hpp>
@@ -51,32 +52,32 @@ public:
     ~optional() { reset(); }
     T& operator*() 
     { 
-        assert(initialized_);
+        BOOST_ASSERT(initialized_);
         return *static_cast<T*>(address()); 
     }
     const T& operator*() const
     { 
-        assert(initialized_);
+        BOOST_ASSERT(initialized_);
         return *static_cast<const T*>(address()); 
     }
     T* operator->() 
     { 
-        assert(initialized_);
+        BOOST_ASSERT(initialized_);
         return static_cast<T*>(address()); 
     }
     const T* operator->() const
     { 
-        assert(initialized_);
+        BOOST_ASSERT(initialized_);
         return static_cast<const T*>(address()); 
     }
     T* get() 
     { 
-        assert(initialized_);
+        BOOST_ASSERT(initialized_);
         return static_cast<T*>(address()); 
     }
     const T* get() const
     { 
-        assert(initialized_);
+        BOOST_ASSERT(initialized_);
         return static_cast<const T*>(address()); 
     }
     void reset() 

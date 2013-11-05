@@ -42,7 +42,7 @@ public:
    bool init(BidirectionalIterator first)
    {
       base = first;
-      return u32regex_search(first, end, what, re, flags);
+      return u32regex_search(first, end, what, re, flags, base);
    }
    bool compare(const u32regex_iterator_implementation& that)
    {
@@ -53,15 +53,15 @@ public:
    { return what; }
    bool next()
    {
-      if(what.prefix().first != what[0].second)
-         flags |= match_prev_avail;
+      //if(what.prefix().first != what[0].second)
+      //   flags |= match_prev_avail;
       BidirectionalIterator next_start = what[0].second;
       match_flag_type f(flags);
       if(!what.length())
          f |= regex_constants::match_not_initial_null;
-      if(base != next_start)
-         f |= regex_constants::match_not_bob;
-      bool result = u32regex_search(next_start, end, what, re, f);
+      //if(base != next_start)
+      //   f |= regex_constants::match_not_bob;
+      bool result = u32regex_search(next_start, end, what, re, f, base);
       if(result)
          what.set_base(base);
       return result;
@@ -166,7 +166,7 @@ inline u32regex_iterator<const wchar_t*> make_u32regex_iterator(const wchar_t* p
    return u32regex_iterator<const wchar_t*>(p, p+std::wcslen(p), e, m);
 }
 #endif
-#ifndef U_WCHAR_IS_UTF16
+#if !defined(U_WCHAR_IS_UTF16) && (U_SIZEOF_WCHAR_T != 2)
 inline u32regex_iterator<const UChar*> make_u32regex_iterator(const UChar* p, const u32regex& e, regex_constants::match_flag_type m = regex_constants::match_default)
 {
    return u32regex_iterator<const UChar*>(p, p+u_strlen(p), e, m);
@@ -175,9 +175,10 @@ inline u32regex_iterator<const UChar*> make_u32regex_iterator(const UChar* p, co
 template <class charT, class Traits, class Alloc>
 inline u32regex_iterator<typename std::basic_string<charT, Traits, Alloc>::const_iterator> make_u32regex_iterator(const std::basic_string<charT, Traits, Alloc>& p, const u32regex& e, regex_constants::match_flag_type m = regex_constants::match_default)
 {
-   return u32regex_iterator<typename std::basic_string<charT, Traits, Alloc>::const_iterator>(p.begin(), p.end(), e, m);
+   typedef typename std::basic_string<charT, Traits, Alloc>::const_iterator iter_type;
+   return u32regex_iterator<iter_type>(p.begin(), p.end(), e, m);
 }
-inline u32regex_iterator<const UChar*> make_u32regex_iterator(const UnicodeString& s, const u32regex& e, regex_constants::match_flag_type m = regex_constants::match_default)
+inline u32regex_iterator<const UChar*> make_u32regex_iterator(const U_NAMESPACE_QUALIFIER UnicodeString& s, const u32regex& e, regex_constants::match_flag_type m = regex_constants::match_default)
 {
    return u32regex_iterator<const UChar*>(s.getBuffer(), s.getBuffer() + s.length(), e, m);
 }

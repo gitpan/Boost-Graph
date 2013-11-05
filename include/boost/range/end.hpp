@@ -25,118 +25,71 @@
 #include <boost/range/iterator.hpp>
 #include <boost/range/const_iterator.hpp>
 
-namespace boost 
+namespace boost
 {
-    
+
 #if !BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x564)) && \
     !BOOST_WORKAROUND(__GNUC__, < 3) \
-    /**/ 
+    /**/
 namespace range_detail
 {
-#endif   
+#endif
 
         //////////////////////////////////////////////////////////////////////
         // primary template
         //////////////////////////////////////////////////////////////////////
-        
-        template< typename C >
-        inline BOOST_DEDUCED_TYPENAME range_const_iterator<C>::type
-        boost_range_end( const C& c )
-        {
-            return c.end();
-        }
-                
         template< typename C >
         inline BOOST_DEDUCED_TYPENAME range_iterator<C>::type
-        boost_range_end( C& c )
+        range_end( C& c )
         {
+            //
+            // If you get a compile-error here, it is most likely because
+            // you have not implemented range_begin() properly in
+            // the namespace of C
+            //
             return c.end();
         }
-      
+
         //////////////////////////////////////////////////////////////////////
         // pair
         //////////////////////////////////////////////////////////////////////
 
         template< typename Iterator >
-        inline Iterator boost_range_end( const std::pair<Iterator,Iterator>& p )
+        inline Iterator range_end( const std::pair<Iterator,Iterator>& p )
         {
             return p.second;
         }
-        
+
         template< typename Iterator >
-        inline Iterator boost_range_end( std::pair<Iterator,Iterator>& p )
+        inline Iterator range_end( std::pair<Iterator,Iterator>& p )
         {
             return p.second;
         }
-        
+
         //////////////////////////////////////////////////////////////////////
         // array
         //////////////////////////////////////////////////////////////////////
 
         template< typename T, std::size_t sz >
-        inline const T* boost_range_end( const T (&array)[sz] )
+        inline const T* range_end( const T (&a)[sz] )
         {
-            return range_detail::array_end<T,sz>( array ); 
+            return range_detail::array_end<T,sz>( a );
         }
-        
+
         template< typename T, std::size_t sz >
-        inline T* boost_range_end( T (&array)[sz] )
+        inline T* range_end( T (&a)[sz] )
         {
-            return range_detail::array_end<T,sz>( array ); 
+            return range_detail::array_end<T,sz>( a );
         }
-
-        //////////////////////////////////////////////////////////////////////
-        // string
-        //////////////////////////////////////////////////////////////////////
-
-#if 1 || BOOST_WORKAROUND(__MWERKS__, <= 0x3204 ) || BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x564))
-// CW up to 9.3 and borland have troubles with function ordering
-        inline char* boost_range_end( char* s )
-        {
-            return range_detail::str_end( s );
-        }
-
-        inline wchar_t* boost_range_end( wchar_t* s )
-        {
-            return range_detail::str_end( s );
-        }
-
-        inline const char* boost_range_end( const char* s )
-        {
-            return range_detail::str_end( s );
-        }
-
-        inline const wchar_t* boost_range_end( const wchar_t* s )
-        {
-            return range_detail::str_end( s );
-        }
-#else
-        inline char* boost_range_end( char*& s )
-        {
-            return range_detail::str_end( s );
-        }
-
-        inline wchar_t* boost_range_end( wchar_t*& s )
-        {
-            return range_detail::str_end( s );
-        }
-
-        inline const char* boost_range_end( const char*& s )
-        {
-            return range_detail::str_end( s );
-        }
-
-        inline const wchar_t* boost_range_end( const wchar_t*& s )
-        {
-            return range_detail::str_end( s );
-        }
-#endif
 
 #if !BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x564)) && \
     !BOOST_WORKAROUND(__GNUC__, < 3) \
-    /**/  
+    /**/
 } // namespace 'range_detail'
 #endif
+
+namespace range_adl_barrier
+{
 
 template< class T >
 inline BOOST_DEDUCED_TYPENAME range_iterator<T>::type end( T& r )
@@ -145,54 +98,39 @@ inline BOOST_DEDUCED_TYPENAME range_iterator<T>::type end( T& r )
     !BOOST_WORKAROUND(__GNUC__, < 3) \
     /**/
     using namespace range_detail;
-#endif        
-    return boost_range_end( r );
+#endif
+    return range_end( r );
 }
 
 template< class T >
-inline BOOST_DEDUCED_TYPENAME range_const_iterator<T>::type end( const T& r )
+inline BOOST_DEDUCED_TYPENAME range_iterator<const T>::type end( const T& r )
 {
 #if !BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x564)) && \
     !BOOST_WORKAROUND(__GNUC__, < 3) \
     /**/
     using namespace range_detail;
-#endif        
-    return boost_range_end( r );
-}
-
-
-
-#if BOOST_WORKAROUND(__MWERKS__, <= 0x3003 ) || BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x564))
-// BCB and CW are not able to overload pointer when class overloads are also available.
-template<>
-inline range_const_iterator<const char*>::type end<const char*>( const char*& r )
-{
-    return range_detail::str_end( r );
-}
-
-template<>
-inline range_const_iterator<const wchar_t*>::type end<const wchar_t*>( const wchar_t*& r )
-{
-    return range_detail::str_end( r );
-}
-
 #endif
+    return range_end( r );
+}
 
+    } // namespace range_adl_barrier
 } // namespace 'boost'
-
-
 
 #endif // BOOST_NO_FUNCTION_TEMPLATE_ORDERING
 
-
 namespace boost
 {
-    template< class T >
-    inline BOOST_DEDUCED_TYPENAME range_const_iterator<T>::type
-    const_end( const T& r )
+    namespace range_adl_barrier
     {
-        return end( r );
-    }
-}
+        template< class T >
+        inline BOOST_DEDUCED_TYPENAME range_iterator<const T>::type
+        const_end( const T& r )
+        {
+            return boost::range_adl_barrier::end( r );
+        }
+    } // namespace range_adl_barrier
+    using namespace range_adl_barrier;
+} // namespace boost
 
 #endif
+

@@ -19,15 +19,16 @@
 // can't use this - much as I'd like to as borland doesn't support it
 // #include <boost/scoped_ptr.hpp>
 
-#include <boost/archive/basic_archive.hpp>
-#include <boost/serialization/tracking_enum.hpp>
+#include <boost/config.hpp>
+#include <boost/noncopyable.hpp>
 
+#include <boost/type_traits/broken_compiler_spec.hpp>
+#include <boost/serialization/tracking_enum.hpp>
+#include <boost/archive/basic_archive.hpp>
+#include <boost/archive/detail/decl.hpp>
 #include <boost/archive/detail/abi_prefix.hpp> // must be the last header
 
 namespace boost {
-template<class T>
-class shared_ptr;
-
 namespace serialization {
     class extended_type_info;
 } // namespace serialization
@@ -40,7 +41,8 @@ class BOOST_ARCHIVE_DECL(BOOST_PP_EMPTY()) basic_iserializer;
 class BOOST_ARCHIVE_DECL(BOOST_PP_EMPTY()) basic_pointer_iserializer;
 //////////////////////////////////////////////////////////////////////
 // class basic_iarchive - read serialized objects from a input stream
-class BOOST_ARCHIVE_DECL(BOOST_PP_EMPTY()) basic_iarchive 
+class BOOST_ARCHIVE_DECL(BOOST_PP_EMPTY()) basic_iarchive :
+    private boost::noncopyable
 {
     friend class basic_iarchive_impl;
     // hide implementation of this class to minimize header conclusion
@@ -56,20 +58,16 @@ class BOOST_ARCHIVE_DECL(BOOST_PP_EMPTY()) basic_iarchive
     virtual void vload(tracking_type &t) = 0;
 protected:
     basic_iarchive(unsigned int flags);
-    virtual ~basic_iarchive();
+    // account for bogus gcc warning
+    #if defined(__GNUC__)
+    virtual
+    #endif
+    ~basic_iarchive();
 public:
     // note: NOT part of the public API.
     void next_object_pointer(void *t);
-    void register_basic_serializer(const basic_iserializer & bis);
-    void
-    lookup_basic_helper(
-        const boost::serialization::extended_type_info * const eti,
-        shared_ptr<void> & sph
-    );
-    void 
-    insert_basic_helper(
-        const boost::serialization::extended_type_info * const eti,
-        shared_ptr<void> & sph
+    void register_basic_serializer(
+        const basic_iserializer & bis
     );
     void load_object(
         void *t, 
@@ -82,11 +80,12 @@ public:
         const basic_pointer_iserializer * (*finder)(
             const boost::serialization::extended_type_info & eti
         )
+
     );
     // real public API starts here
     void 
-    set_library_version(unsigned int archive_library_version);
-    unsigned int 
+    set_library_version(library_version_type archive_library_version);
+    library_version_type 
     get_library_version() const;
     unsigned int
     get_flags() const;
@@ -102,9 +101,9 @@ public:
 
 // required by smart_cast for compilers not implementing 
 // partial template specialization
-BOOST_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(
-    boost::archive::detail::basic_iarchive
-)
+BOOST_TT_BROKEN_COMPILER_SPEC(
+    boost::archive::detail::basic_iarchive  
+) 
 
 #include <boost/archive/detail/abi_suffix.hpp> // pops abi_suffix.hpp pragmas
 

@@ -4,14 +4,15 @@
 /* Copyright (c) 2004-2005 CrystalClear Software, Inc.
  * Use, modification and distribution is subject to the 
  * Boost Software License, Version 1.0. (See accompanying
- * file LICENSE-1.0 or http://www.boost.org/LICENSE-1.0)
+ * file LICENSE_1_0.txt or http://www.boost.org/LICENSE_1_0.txt)
  * Author: Jeff Garland, Bart Garst
- * $Date: 2005/06/21 03:33:15 $
+ * $Date: 2012-09-30 16:25:22 -0700 (Sun, 30 Sep 2012) $
  */
 
 #include "boost/date_time/posix_time/posix_time.hpp"
 #include "boost/date_time/gregorian/greg_serialize.hpp"
 #include "boost/serialization/split_free.hpp"
+#include "boost/serialization/nvp.hpp"
 
 
 // macros to split serialize functions into save & load functions
@@ -35,7 +36,7 @@ namespace serialization {
 template<class Archive>
 void save(Archive & ar, 
           const posix_time::time_duration& td, 
-          unsigned int version)
+          unsigned int /*version*/)
 {
   // serialize a bool so we know how to read this back in later
   bool is_special = td.is_special();
@@ -45,10 +46,10 @@ void save(Archive & ar,
     ar & make_nvp("sv_time_duration", s);
   }
   else {
-    typename posix_time::time_duration::hour_type h = td.hours();
-    typename posix_time::time_duration::min_type m = td.minutes();
-    typename posix_time::time_duration::sec_type s = td.seconds();
-    typename posix_time::time_duration::fractional_seconds_type fs = td.fractional_seconds();
+    posix_time::time_duration::hour_type h = td.hours();
+    posix_time::time_duration::min_type m = td.minutes();
+    posix_time::time_duration::sec_type s = td.seconds();
+    posix_time::time_duration::fractional_seconds_type fs = td.fractional_seconds();
     ar & make_nvp("time_duration_hours", h);
     ar & make_nvp("time_duration_minutes", m);
     ar & make_nvp("time_duration_seconds", s);
@@ -64,7 +65,7 @@ void save(Archive & ar,
 template<class Archive>
 void load(Archive & ar, 
           posix_time::time_duration & td, 
-          unsigned int version)
+          unsigned int /*version*/)
 {
   bool is_special = false;
   ar & make_nvp("is_special", is_special);
@@ -75,10 +76,10 @@ void load(Archive & ar,
     td = posix_time::time_duration(sv);
   }
   else {
-    typename posix_time::time_duration::hour_type h(0);
-    typename posix_time::time_duration::min_type m(0);
-    typename posix_time::time_duration::sec_type s(0);
-    typename posix_time::time_duration::fractional_seconds_type fs(0);
+    posix_time::time_duration::hour_type h(0);
+    posix_time::time_duration::min_type m(0);
+    posix_time::time_duration::sec_type s(0);
+    posix_time::time_duration::fractional_seconds_type fs(0);
     ar & make_nvp("time_duration_hours", h);
     ar & make_nvp("time_duration_minutes", m);
     ar & make_nvp("time_duration_seconds", s);
@@ -99,14 +100,14 @@ void load(Archive & ar,
 template<class Archive>
 void save(Archive & ar, 
           const posix_time::ptime& pt, 
-          unsigned int version)
+          unsigned int /*version*/)
 {
   // from_iso_string does not include fractional seconds
   // therefore date and time_duration are used
-  typename posix_time::ptime::date_type d = pt.date();
+  posix_time::ptime::date_type d = pt.date();
   ar & make_nvp("ptime_date", d);
   if(!pt.is_special()) {
-    typename posix_time::ptime::time_duration_type td = pt.time_of_day();
+    posix_time::ptime::time_duration_type td = pt.time_of_day();
     ar & make_nvp("ptime_time_duration", td);
   }
 }
@@ -118,12 +119,12 @@ void save(Archive & ar,
 template<class Archive>
 void load(Archive & ar, 
           posix_time::ptime & pt, 
-          unsigned int version)
+          unsigned int /*version*/)
 {
   // from_iso_string does not include fractional seconds
   // therefore date and time_duration are used
-  typename posix_time::ptime::date_type d(posix_time::not_a_date_time);
-  typename posix_time::ptime::time_duration_type td;
+  posix_time::ptime::date_type d(posix_time::not_a_date_time);
+  posix_time::ptime::time_duration_type td;
   ar & make_nvp("ptime_date", d);
   if(!d.is_special()) {
     ar & make_nvp("ptime_time_duration", td);
@@ -137,9 +138,9 @@ void load(Archive & ar,
 
 //!override needed b/c no default constructor
 template<class Archive>
-inline void load_construct_data(Archive & ar, 
+inline void load_construct_data(Archive & /*ar*/, 
                                 posix_time::ptime* pt, 
-                                const unsigned int file_version)
+                                const unsigned int /*file_version*/)
 {
   // retrieve data from archive required to construct new 
   // invoke inplace constructor to initialize instance of date
@@ -155,7 +156,7 @@ inline void load_construct_data(Archive & ar,
 template<class Archive>
 void save(Archive & ar, 
           const posix_time::time_period& tp, 
-          unsigned int version)
+          unsigned int /*version*/)
 {
   posix_time::ptime beg(tp.begin().date(), tp.begin().time_of_day());
   posix_time::ptime end(tp.end().date(), tp.end().time_of_day());
@@ -170,7 +171,7 @@ void save(Archive & ar,
 template<class Archive>
 void load(Archive & ar, 
           boost::posix_time::time_period & tp, 
-          unsigned int version)
+          unsigned int /*version*/)
 {
   posix_time::time_duration td(1,0,0);
   gregorian::date d(gregorian::not_a_date_time);
@@ -183,9 +184,9 @@ void load(Archive & ar,
 
 //!override needed b/c no default constructor
 template<class Archive>
-inline void load_construct_data(Archive & ar, 
+inline void load_construct_data(Archive & /*ar*/, 
                                 boost::posix_time::time_period* tp, 
-                                const unsigned int file_version)
+                                const unsigned int /*file_version*/)
 {
   posix_time::time_duration td(1,0,0);
   gregorian::date d(gregorian::not_a_date_time);

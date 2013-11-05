@@ -21,6 +21,7 @@
 // for wchar_t based streams on systems for which wchar_t not a true
 // type but rather a synonym for some integer type.
 
+#include <cstddef> // NULL
 #include <istream>
 #include <boost/iterator/iterator_facade.hpp>
 
@@ -48,22 +49,34 @@ class istream_iterator :
     > super_t;
     typedef BOOST_DEDUCED_TYPENAME std::basic_istream<Elem> istream_type;
  
-    //Access the value referred to 
-    Elem dereference() const {
-        return m_current_value;
-    }
-
     bool equal(const this_t & rhs) const {
         // note: only  works for comparison against end of stream
         return m_istream == rhs.m_istream;
     }
 
+/*
+    //Access the value referred to 
+    Elem dereference() const {
+        return m_current_value;
+    }
+
     void increment(){
         if(NULL != m_istream){
-            m_current_value = m_istream->get();
+            m_current_value = static_cast<Elem>(m_istream->get());
             if(! m_istream->good()){
                 const_cast<this_t *>(this)->m_istream = NULL;
             }
+        }
+    }
+*/
+    //Access the value referred to 
+    Elem dereference() const {
+        return m_istream->peek();
+    }
+
+    void increment(){
+        if(NULL != m_istream){
+            m_istream->ignore(1);
         }
     }
 
@@ -73,7 +86,7 @@ public:
     istream_iterator(istream_type & is) :
         m_istream(& is)
     {
-        increment();
+        //increment();
     }
 
     istream_iterator() :

@@ -1,33 +1,42 @@
-// Copyright (C) 2003, Fernando Luis Cacciola Carballal.
+// Copyright (C) 2003, 2008 Fernando Luis Cacciola Carballal.
 //
 // Use, modification, and distribution is subject to the Boost Software
 // License, Version 1.0. (See accompanying file LICENSE_1_0.txt or copy at
 // http://www.boost.org/LICENSE_1_0.txt)
 //
-// See http://www.boost.org/lib/optional for documentation.
+// See http://www.boost.org/libs/optional for documentation.
 //
 // You are welcome to contact the author at:
 //  fernando_cacciola@hotmail.com
 //
+// Revisions:
+// 27 Apr 2008 (improved swap) Fernando Cacciola, Niels Dekker, Thorsten Ottosen
+//
 #ifndef BOOST_OPTIONAL_OPTIONAL_FLC_19NOV2002_HPP
 #define BOOST_OPTIONAL_OPTIONAL_FLC_19NOV2002_HPP
 
-#include<new>
-#include<algorithm>
+#include <new>
+#include <algorithm>
 
-#include "boost/config.hpp"
-#include "boost/assert.hpp"
-#include "boost/type.hpp"
-#include "boost/type_traits/alignment_of.hpp"
-#include "boost/type_traits/type_with_alignment.hpp"
-#include "boost/type_traits/remove_reference.hpp"
-#include "boost/type_traits/is_reference.hpp"
-#include "boost/mpl/if.hpp"
-#include "boost/mpl/bool.hpp"
-#include "boost/mpl/not.hpp"
-#include "boost/detail/reference_content.hpp"
-#include "boost/none_t.hpp"
-#include "boost/utility/compare_pointees.hpp"
+#include <boost/config.hpp>
+#include <boost/assert.hpp>
+#include <boost/type.hpp>
+#include <boost/type_traits/alignment_of.hpp>
+#include <boost/type_traits/has_nothrow_constructor.hpp>
+#include <boost/type_traits/type_with_alignment.hpp>
+#include <boost/type_traits/remove_reference.hpp>
+#include <boost/type_traits/is_reference.hpp>
+#include <boost/mpl/if.hpp>
+#include <boost/mpl/bool.hpp>
+#include <boost/mpl/not.hpp>
+#include <boost/detail/reference_content.hpp>
+#include <boost/none.hpp>
+#include <boost/utility/swap.hpp>
+#include <boost/utility/addressof.hpp>
+#include <boost/utility/compare_pointees.hpp>
+#include <boost/utility/in_place_factory.hpp>
+
+#include <boost/optional/optional_fwd.hpp>
 
 #if BOOST_WORKAROUND(BOOST_MSVC, == 1200)
 // VC6.0 has the following bug:
@@ -64,7 +73,7 @@
 #endif
 
 #if !defined(BOOST_OPTIONAL_NO_INPLACE_FACTORY_SUPPORT) \
-    && BOOST_WORKAROUND(__BORLANDC__, <= 0x564)
+    && BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x581) )
 // BCB (up to 5.64) has the following bug:
 //   If there is a member function/operator template of the form
 //     template<class Expr> mfunc( Expr expr ) ;
@@ -74,11 +83,36 @@
 #define BOOST_OPTIONAL_WEAK_OVERLOAD_RESOLUTION
 #endif
 
+#if defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__) > 302 \
+    && !defined(__INTEL_COMPILER)
+// GCC since 3.3 has may_alias attribute that helps to alleviate optimizer issues with
+// regard to violation of the strict aliasing rules. The optional< T > storage type is marked
+// with this attribute in order to let the compiler know that it will alias objects of type T
+// and silence compilation warnings.
+#define BOOST_OPTIONAL_DETAIL_USE_ATTRIBUTE_MAY_ALIAS
+#endif
+
+// Daniel Wallin discovered that bind/apply.hpp badly interacts with the apply<>
+// member template of a factory as used in the optional<> implementation.
+// He proposed this simple fix which is to move the call to apply<> outside
+// namespace boost.
+namespace boost_optional_detail
+{
+  template <class T, class Factory>
+  inline void construct(Factory const& factory, void* address)
+  {
+    factory.BOOST_NESTED_TEMPLATE apply<T>(address);
+  }
+}
+
 
 namespace boost {
 
 class in_place_factory_base ;
 class typed_in_place_factory_base ;
+
+// This forward is needed to refer to namespace scope swap from the member swap
+template<class T> void swap ( optional<T>& x, optional<T>& y );
 
 namespace optional_detail {
 
@@ -90,7 +124,12 @@ template <class T>
 class aligned_storage
 {
     // Borland ICEs if unnamed unions are used for this!
-    union dummy_u
+    union
+    // This works around GCC warnings about breaking strict aliasing rules when casting storage address to T*
+#if defined(BOOST_OPTIONAL_DETAIL_USE_ATTRIBUTE_MAY_ALIAS)
+    __attribute__((may_alias))
+#endif
+    dummy_u
     {
         char data[ sizeof(T) ];
         BOOST_DEDUCED_TYPENAME type_with_alignment<
@@ -99,8 +138,13 @@ class aligned_storage
 
   public:
 
-    void const* address() const { return &dummy_.data[0]; }
-    void      * address()       { return &dummy_.data[0]; }
+#if defined(BOOST_OPTIONAL_DETAIL_USE_ATTRIBUTE_MAY_ALIAS)
+    void const* address() const { return &dummy_; }
+    void      * address()       { return &dummy_; }
+#else
+    void const* address() const { return dummy_.data; }
+    void      * address()       { return dummy_.data; }
+#endif
 } ;
 
 template<class T>
@@ -131,7 +175,11 @@ class optional_base : public optional_tag
 {
   private :
 
-    typedef BOOST_DEDUCED_TYPENAME detail::make_reference_content<T>::type internal_type ;
+    typedef
+#if !BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x564))
+    BOOST_DEDUCED_TYPENAME
+#endif
+    ::boost::detail::make_reference_content<T>::type internal_type ;
 
     typedef aligned_storage<internal_type> storage_type ;
 
@@ -149,8 +197,10 @@ class optional_base : public optional_tag
 
     typedef BOOST_DEDUCED_TYPENAME is_reference<T>::type is_reference_predicate ;
 
+  public:
     typedef BOOST_DEDUCED_TYPENAME mpl::if_<is_reference_predicate,types_when_ref,types_when_not_ref>::type types ;
 
+  protected:
     typedef bool (this_type::*unspecified_bool_type)() const;
 
     typedef BOOST_DEDUCED_TYPENAME types::reference_type       reference_type ;
@@ -167,7 +217,7 @@ class optional_base : public optional_tag
 
     // Creates an optional<T> uninitialized.
     // No-throw
-    optional_base ( none_t const& )
+    optional_base ( none_t )
       :
       m_initialized(false) {}
 
@@ -178,6 +228,16 @@ class optional_base : public optional_tag
       m_initialized(false)
     {
       construct(val);
+    }
+
+    // Creates an optional<T> initialized with 'val' IFF cond is true, otherwise creates an uninitialzed optional<T>.
+    // Can throw if T::T(T const&) does
+    optional_base ( bool cond, argument_type val )
+      :
+      m_initialized(false)
+    {
+      if ( cond )
+        construct(val);
     }
 
     // Creates a deep copy of another optional<T>
@@ -223,6 +283,23 @@ class optional_base : public optional_tag
       }
     }
 
+    // Assigns from another _convertible_ optional<U> (deep-copies the rhs value)
+    template<class U>
+    void assign ( optional<U> const& rhs )
+    {
+      if (is_initialized())
+      {
+        if ( rhs.is_initialized() )
+             assign_value(static_cast<value_type>(rhs.get()), is_reference_predicate() );
+        else destroy();
+      }
+      else
+      {
+        if ( rhs.is_initialized() )
+          construct(static_cast<value_type>(rhs.get()));
+      }
+    }
+
     // Assigns from a T (deep-copies the rhs value)
     void assign ( argument_type val )
     {
@@ -233,7 +310,7 @@ class optional_base : public optional_tag
 
     // Assigns from "none", destroying the current value, if any, leaving this UNINITIALIZED
     // No-throw (assuming T::~T() doesn't)
-    void assign ( none_t const& ) { destroy(); }
+    void assign ( none_t ) { destroy(); }
 
 #ifndef BOOST_OPTIONAL_NO_INPLACE_FACTORY_SUPPORT
     template<class Expr>
@@ -276,7 +353,7 @@ class optional_base : public optional_tag
     void construct ( Expr const& factory, in_place_factory_base const* )
      {
        BOOST_STATIC_ASSERT ( ::boost::mpl::not_<is_reference_predicate>::value ) ;
-       factory.BOOST_NESTED_TEMPLATE apply<value_type>(m_storage.address()) ;
+       boost_optional_detail::construct<value_type>(factory, m_storage.address());
        m_initialized = true ;
      }
 
@@ -373,8 +450,22 @@ class optional_base : public optional_tag
   private :
 
     // internal_type can be either T or reference_content<T>
+#if defined(BOOST_OPTIONAL_DETAIL_USE_ATTRIBUTE_MAY_ALIAS)
+    // This workaround is supposed to silence GCC warnings about broken strict aliasing rules
+    internal_type const* get_object() const
+    {
+        union { void const* ap_pvoid; internal_type const* as_ptype; } caster = { m_storage.address() };
+        return caster.as_ptype;
+    }
+    internal_type *      get_object()
+    {
+        union { void* ap_pvoid; internal_type* as_ptype; } caster = { m_storage.address() };
+        return caster.as_ptype;
+    }
+#else
     internal_type const* get_object() const { return static_cast<internal_type const*>(m_storage.address()); }
     internal_type *      get_object()       { return static_cast<internal_type *>     (m_storage.address()); }
+#endif
 
     // reference_content<T> lacks an implicit conversion to T&, so the following is needed to obtain a proper reference.
     reference_const_type dereference( internal_type const* p, is_not_reference_tag ) const { return *p ; }
@@ -382,7 +473,7 @@ class optional_base : public optional_tag
     reference_const_type dereference( internal_type const* p, is_reference_tag     ) const { return p->get() ; }
     reference_type       dereference( internal_type*       p, is_reference_tag     )       { return p->get() ; }
 
-#if BOOST_WORKAROUND(__BORLANDC__, <= 0x564)
+#if BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x581))
     void destroy_impl ( is_not_reference_tag ) { get_ptr_impl()->internal_type::~internal_type() ; m_initialized = false ; }
 #else
     void destroy_impl ( is_not_reference_tag ) { get_ptr_impl()->T::~T() ; m_initialized = false ; }
@@ -395,6 +486,8 @@ class optional_base : public optional_tag
     // the following olverloads are used to filter out the case and guarantee an error in case of T being a reference.
     pointer_const_type cast_ptr( internal_type const* p, is_not_reference_tag ) const { return p ; }
     pointer_type       cast_ptr( internal_type *      p, is_not_reference_tag )       { return p ; }
+    pointer_const_type cast_ptr( internal_type const* p, is_reference_tag     ) const { return &p->get() ; }
+    pointer_type       cast_ptr( internal_type *      p, is_reference_tag     )       { return &p->get() ; }
 
     bool m_initialized ;
     storage_type m_storage ;
@@ -426,12 +519,15 @@ class optional : public optional_detail::optional_base<T>
 
     // Creates an optional<T> uninitialized.
     // No-throw
-    optional( none_t const& none_ ) : base(none_) {}
+    optional( none_t none_ ) : base(none_) {}
 
     // Creates an optional<T> initialized with 'val'.
     // Can throw if T::T(T const&) does
     optional ( argument_type val ) : base(val) {}
 
+    // Creates an optional<T> initialized with 'val' IFF cond is true, otherwise creates an uninitialized optional.
+    // Can throw if T::T(T const&) does
+    optional ( bool cond, argument_type val ) : base(cond,val) {}
 
 #ifndef BOOST_OPTIONAL_NO_CONVERTING_COPY_CTOR
     // NOTE: MSVC needs templated versions first
@@ -460,12 +556,12 @@ class optional : public optional_detail::optional_base<T>
     // Depending on the above some T ctor is called.
     // Can throw is the resolved T ctor throws.
     template<class Expr>
-    explicit optional ( Expr const& expr ) : base(expr,&expr) {}
+    explicit optional ( Expr const& expr ) : base(expr,boost::addressof(expr)) {}
 #endif
 
     // Creates a deep copy of another optional<T>
     // Can throw if T::T(T const&) does
-    optional ( optional const& rhs ) : base(rhs) {}
+    optional ( optional const& rhs ) : base( static_cast<base const&>(rhs) ) {}
 
    // No-throw (assuming T::~T() doesn't)
     ~optional() {}
@@ -474,12 +570,13 @@ class optional : public optional_detail::optional_base<T>
     // Assigns from an expression. See corresponding constructor.
     // Basic Guarantee: If the resolved T ctor throws, this is left UNINITIALIZED
     template<class Expr>
-    optional& operator= ( Expr expr )
+    optional& operator= ( Expr const& expr )
       {
-        this->assign_expr(expr,&expr);
+        this->assign_expr(expr,boost::addressof(expr));
         return *this ;
       }
 #endif
+
 
 #ifndef BOOST_OPTIONAL_NO_CONVERTING_ASSIGNMENT
     // Assigns from another convertible optional<U> (converts && deep-copies the rhs value)
@@ -488,7 +585,7 @@ class optional : public optional_detail::optional_base<T>
     template<class U>
     optional& operator= ( optional<U> const& rhs )
       {
-        this->assign(rhs.get());
+        this->assign(rhs);
         return *this ;
       }
 #endif
@@ -498,7 +595,7 @@ class optional : public optional_detail::optional_base<T>
     //  (NOTE: On BCB, this operator is not actually called and left is left UNMODIFIED in case of a throw)
     optional& operator= ( optional const& rhs )
       {
-        this->assign( rhs ) ;
+        this->assign( static_cast<base const&>(rhs) ) ;
         return *this ;
       }
 
@@ -513,17 +610,29 @@ class optional : public optional_detail::optional_base<T>
     // Assigns from a "none"
     // Which destroys the current value, if any, leaving this UNINITIALIZED
     // No-throw (assuming T::~T() doesn't)
-    optional& operator= ( none_t const& none_ )
+    optional& operator= ( none_t none_ )
       {
         this->assign( none_ ) ;
         return *this ;
       }
+
+    void swap( optional & arg )
+      {
+        // allow for Koenig lookup
+        using boost::swap;
+        swap(*this, arg);
+      }
+
 
     // Returns a reference to the value if this is initialized, otherwise,
     // the behaviour is UNDEFINED
     // No-throw
     reference_const_type get() const { BOOST_ASSERT(this->is_initialized()) ; return this->get_impl(); }
     reference_type       get()       { BOOST_ASSERT(this->is_initialized()) ; return this->get_impl(); }
+
+    // Returns a copy of the value if this is initialized, 'v' otherwise
+    reference_const_type get_value_or ( reference_const_type v ) const { return this->is_initialized() ? get() : v ; }
+    reference_type       get_value_or ( reference_type       v )       { return this->is_initialized() ? get() : v ; }
 
     // Returns a pointer to the value if this is initialized, otherwise,
     // the behaviour is UNDEFINED
@@ -541,10 +650,26 @@ class optional : public optional_detail::optional_base<T>
     // No-throw
     operator unspecified_bool_type() const { return this->safe_bool() ; }
 
-       // This is provided for those compilers which don't like the conversion to bool
-       // on some contexts.
-       bool operator!() const { return !this->is_initialized() ; }
+    // This is provided for those compilers which don't like the conversion to bool
+    // on some contexts.
+    bool operator!() const { return !this->is_initialized() ; }
 } ;
+
+// Returns optional<T>(v)
+template<class T>
+inline
+optional<T> make_optional ( T const& v  )
+{
+  return optional<T>(v);
+}
+
+// Returns optional<T>(cond,v)
+template<class T>
+inline
+optional<T> make_optional ( bool cond, T const& v )
+{
+  return optional<T>(cond,v);
+}
 
 // Returns a reference to the value if this is initialized, otherwise, the behaviour is UNDEFINED.
 // No-throw
@@ -582,6 +707,24 @@ get ( optional<T>* opt )
   return opt->get_ptr() ;
 }
 
+// Returns a reference to the value if this is initialized, otherwise, the behaviour is UNDEFINED.
+// No-throw
+template<class T>
+inline
+BOOST_DEDUCED_TYPENAME optional<T>::reference_const_type
+get_optional_value_or ( optional<T> const& opt, BOOST_DEDUCED_TYPENAME optional<T>::reference_const_type v )
+{
+  return opt.get_value_or(v) ;
+}
+
+template<class T>
+inline
+BOOST_DEDUCED_TYPENAME optional<T>::reference_type
+get_optional_value_or ( optional<T>& opt, BOOST_DEDUCED_TYPENAME optional<T>::reference_type v )
+{
+  return opt.get_value_or(v) ;
+}
+
 // Returns a pointer to the value if this is initialized, otherwise, returns NULL.
 // No-throw
 template<class T>
@@ -602,6 +745,11 @@ get_pointer ( optional<T>& opt )
 
 // optional's relational operators ( ==, !=, <, >, <=, >= ) have deep-semantics (compare values).
 // WARNING: This is UNLIKE pointers. Use equal_pointees()/less_pointess() in generic code instead.
+
+
+//
+// optional<T> vs optional<T> cases
+//
 
 template<class T>
 inline
@@ -633,117 +781,211 @@ inline
 bool operator >= ( optional<T> const& x, optional<T> const& y )
 { return !( x < y ) ; }
 
+
+//
+// optional<T> vs T cases
+//
 template<class T>
 inline
-bool operator == ( optional<T> const& x, none_t const& )
+bool operator == ( optional<T> const& x, T const& y )
+{ return equal_pointees(x, optional<T>(y)); }
+
+template<class T>
+inline
+bool operator < ( optional<T> const& x, T const& y )
+{ return less_pointees(x, optional<T>(y)); }
+
+template<class T>
+inline
+bool operator != ( optional<T> const& x, T const& y )
+{ return !( x == y ) ; }
+
+template<class T>
+inline
+bool operator > ( optional<T> const& x, T const& y )
+{ return y < x ; }
+
+template<class T>
+inline
+bool operator <= ( optional<T> const& x, T const& y )
+{ return !( y < x ) ; }
+
+template<class T>
+inline
+bool operator >= ( optional<T> const& x, T const& y )
+{ return !( x < y ) ; }
+
+//
+// T vs optional<T> cases
+//
+
+template<class T>
+inline
+bool operator == ( T const& x, optional<T> const& y )
+{ return equal_pointees( optional<T>(x), y ); }
+
+template<class T>
+inline
+bool operator < ( T const& x, optional<T> const& y )
+{ return less_pointees( optional<T>(x), y ); }
+
+template<class T>
+inline
+bool operator != ( T const& x, optional<T> const& y )
+{ return !( x == y ) ; }
+
+template<class T>
+inline
+bool operator > ( T const& x, optional<T> const& y )
+{ return y < x ; }
+
+template<class T>
+inline
+bool operator <= ( T const& x, optional<T> const& y )
+{ return !( y < x ) ; }
+
+template<class T>
+inline
+bool operator >= ( T const& x, optional<T> const& y )
+{ return !( x < y ) ; }
+
+
+//
+// optional<T> vs none cases
+//
+
+template<class T>
+inline
+bool operator == ( optional<T> const& x, none_t )
 { return equal_pointees(x, optional<T>() ); }
 
 template<class T>
 inline
-bool operator < ( optional<T> const& x, none_t const& )
+bool operator < ( optional<T> const& x, none_t )
 { return less_pointees(x,optional<T>() ); }
 
 template<class T>
 inline
-bool operator != ( optional<T> const& x, none_t const& y )
+bool operator != ( optional<T> const& x, none_t y )
 { return !( x == y ) ; }
 
 template<class T>
 inline
-bool operator > ( optional<T> const& x, none_t const& y )
+bool operator > ( optional<T> const& x, none_t y )
 { return y < x ; }
 
 template<class T>
 inline
-bool operator <= ( optional<T> const& x, none_t const& y )
+bool operator <= ( optional<T> const& x, none_t y )
 { return !( y < x ) ; }
 
 template<class T>
 inline
-bool operator >= ( optional<T> const& x, none_t const& y )
+bool operator >= ( optional<T> const& x, none_t y )
 { return !( x < y ) ; }
+
+//
+// none vs optional<T> cases
+//
 
 template<class T>
 inline
-bool operator == ( none_t const& x, optional<T> const& y )
+bool operator == ( none_t , optional<T> const& y )
 { return equal_pointees(optional<T>() ,y); }
 
 template<class T>
 inline
-bool operator < ( none_t const& x, optional<T> const& y )
+bool operator < ( none_t , optional<T> const& y )
 { return less_pointees(optional<T>() ,y); }
 
 template<class T>
 inline
-bool operator != ( none_t const& x, optional<T> const& y )
+bool operator != ( none_t x, optional<T> const& y )
 { return !( x == y ) ; }
 
 template<class T>
 inline
-bool operator > ( none_t const& x, optional<T> const& y )
+bool operator > ( none_t x, optional<T> const& y )
 { return y < x ; }
 
 template<class T>
 inline
-bool operator <= ( none_t const& x, optional<T> const& y )
+bool operator <= ( none_t x, optional<T> const& y )
 { return !( y < x ) ; }
 
 template<class T>
 inline
-bool operator >= ( none_t const& x, optional<T> const& y )
+bool operator >= ( none_t x, optional<T> const& y )
 { return !( x < y ) ; }
 
-//
-// The following swap implementation follows the GCC workaround as found in
-//  "boost/detail/compressed_pair.hpp"
-//
 namespace optional_detail {
 
-// GCC < 3.2 gets the using declaration at namespace scope (FLC, DWA)
-#if BOOST_WORKAROUND(__GNUC__, < 3)                             \
-    || BOOST_WORKAROUND(__GNUC__, == 3) && __GNUC_MINOR__ <= 2
-   using std::swap;
-#define BOOST_OPTIONAL_STD_SWAP_INTRODUCED_AT_NS_SCOPE
-#endif
+template<bool use_default_constructor> struct swap_selector;
 
-// optional's swap:
-// If both are initialized, calls swap(T&, T&). If this swap throws, both will remain initialized but their values are now unspecified.
-// If only one is initialized, calls U.reset(*I), THEN I.reset().
-// If U.reset(*I) throws, both are left UNCHANGED (U is kept uinitialized and I is never reset)
-// If both are uninitialized, do nothing (no-throw)
-template<class T>
-inline
-void optional_swap ( optional<T>& x, optional<T>& y )
+template<>
+struct swap_selector<true>
 {
-  if ( !x && !!y )
-  {
-    x.reset(*y);
-    y.reset();
-  }
-  else if ( !!x && !y )
-  {
-    y.reset(*x);
-    x.reset();
-  }
-  else if ( !!x && !!y )
-  {
-// GCC > 3.2 and all other compilers have the using declaration at function scope (FLC)
-#ifndef BOOST_OPTIONAL_STD_SWAP_INTRODUCED_AT_NS_SCOPE
-    // allow for Koenig lookup
-    using std::swap ;
-#endif
-    swap(*x,*y);
-  }
-}
+    template<class T>
+    static void optional_swap ( optional<T>& x, optional<T>& y )
+    {
+        const bool hasX = !!x;
+        const bool hasY = !!y;
+
+        if ( !hasX && !hasY )
+            return;
+
+        if( !hasX )
+            x = boost::in_place();
+        else if ( !hasY )
+            y = boost::in_place();
+
+        // Boost.Utility.Swap will take care of ADL and workarounds for broken compilers
+        boost::swap(x.get(),y.get());
+
+        if( !hasX )
+            y = boost::none ;
+        else if( !hasY )
+            x = boost::none ;
+    }
+};
+
+template<>
+struct swap_selector<false>
+{
+    template<class T>
+    static void optional_swap ( optional<T>& x, optional<T>& y )
+    {
+        const bool hasX = !!x;
+        const bool hasY = !!y;
+
+        if ( !hasX && hasY )
+        {
+            x = y.get();
+            y = boost::none ;
+        }
+        else if ( hasX && !hasY )
+        {
+            y = x.get();
+            x = boost::none ;
+        }
+        else if ( hasX && hasY )
+        {
+            // Boost.Utility.Swap will take care of ADL and workarounds for broken compilers
+            boost::swap(x.get(),y.get());
+        }
+    }
+};
 
 } // namespace optional_detail
 
+template<class T>
+struct optional_swap_should_use_default_constructor : has_nothrow_default_constructor<T> {} ;
+
 template<class T> inline void swap ( optional<T>& x, optional<T>& y )
 {
-  optional_detail::optional_swap(x,y);
+    optional_detail::swap_selector<optional_swap_should_use_default_constructor<T>::value>::optional_swap(x, y);
 }
 
 } // namespace boost
 
 #endif
-

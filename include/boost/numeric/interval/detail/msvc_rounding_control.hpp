@@ -17,12 +17,24 @@
 
 #include <float.h>      // MSVC rounding control
 
+// Although the function is called _control87, it seems to work for
+// other FPUs too, so it does not have to be changed to _controlfp.
+
 namespace boost {
 namespace numeric {
 namespace interval_lib {
 namespace detail {
 
+#if BOOST_MSVC < 1400 || defined(_WIN64)
 extern "C" { double rint(double); }
+#else
+inline double rint(double x)
+{
+_asm FLD [x] ;
+_asm FRNDINT ;
+//_asm RET ;
+}
+#endif
 
 struct x86_rounding
 {

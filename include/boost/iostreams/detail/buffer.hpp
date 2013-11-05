@@ -1,4 +1,5 @@
-// (C) Copyright Jonathan Turkanis 2003-5.
+// (C) Copyright 2008 CodeRage, LLC (turkanis at coderage dot com)
+// (C) Copyright 2003-2007 Jonathan Turkanis
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt.)
 
@@ -29,7 +30,7 @@ namespace boost { namespace iostreams { namespace detail {
 //
 // Template name: buffer
 // Description: Character buffer.
-// Template paramters:
+// Template parameters:
 //     Ch - The character type.
 //     Alloc - The Allocator type.
 //
@@ -68,7 +69,7 @@ void swap(basic_buffer<Ch, Alloc>& lhs, basic_buffer<Ch, Alloc>& rhs)
 // Template name: buffer
 // Description: Character buffer with two pointers accessible via ptr() and
 //      eptr().
-// Template paramters:
+// Template parameters:
 //     Ch - A character type.
 //
 template< typename Ch,
@@ -95,19 +96,14 @@ public:
     typename int_type_of<Source>::type fill(Source& src) 
     {
         using namespace std;
-        streamsize keep;
-        if ((keep = static_cast<streamsize>(eptr_ - ptr_)) > 0)
+        std::streamsize keep;
+        if ((keep = static_cast<std::streamsize>(eptr_ - ptr_)) > 0)
             traits_type::move(this->data(), ptr_, keep);
         set(0, keep);
-        streamsize result = 
+        std::streamsize result = 
             iostreams::read(src, this->data() + keep, this->size() - keep);
         if (result != -1)
             this->set(0, keep + result);
-        //return result == this->size() - keep ?
-        //    traits_type::good() :
-        //    keep == -1 ?
-        //        traits_type::eof() :
-        //        traits_type::would_block();
         return result == -1 ?
             traits_type::eof() :
                 result == 0 ?
@@ -121,8 +117,8 @@ public:
     bool flush(Sink& dest) 
     {
         using namespace std;
-        streamsize amt = static_cast<std::streamsize>(eptr_ - ptr_);
-        streamsize result = iostreams::write_if(dest, ptr_, amt);
+        std::streamsize amt = static_cast<std::streamsize>(eptr_ - ptr_);
+        std::streamsize result = iostreams::write_if(dest, ptr_, amt);
         if (result < amt) {
             traits_type::move( this->data(), 
                                ptr_ + result, 
@@ -152,7 +148,12 @@ basic_buffer<Ch, Alloc>::basic_buffer(int buffer_size)
 
 template<typename Ch, typename Alloc>
 inline basic_buffer<Ch, Alloc>::~basic_buffer()
-{ if (buf_) allocator_type().deallocate(buf_, size_); }
+{
+    if (buf_) {
+        allocator_type().deallocate(buf_,
+            static_cast<BOOST_DEDUCED_TYPENAME Alloc::size_type>(size_));
+    }
+}
 
 template<typename Ch, typename Alloc>
 inline void basic_buffer<Ch, Alloc>::resize(int buffer_size)

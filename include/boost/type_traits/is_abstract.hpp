@@ -39,7 +39,7 @@
 //    At this time supported by EDG (Intel C++ 7, Comeau 4.3.2) and VC7.1.
 //  - Adapted and added into Boost.Serialization library by Robert Ramey 
 //    (starting with submission #10).
-//  - Jan 2004: GCC 3.4 fixed to suport DR337 (Giovanni Bajo).
+//  - Jan 2004: GCC 3.4 fixed to support DR337 (Giovanni Bajo).
 //  - Jan 2004: modified to be part of Boost.TypeTraits (Pavel Vozenilek).
 //  - Nov 2004: Christoph Ludwig found that the implementation did not work with
 //              template types and gcc-3.4 or VC7.1, fix due to Christoph Ludwig
@@ -48,21 +48,30 @@
 //              to degrade gracefully, rather than trash the compiler (John Maddock).
 //
 
+#include <boost/type_traits/intrinsics.hpp>
+#ifndef BOOST_IS_ABSTRACT
 #include <boost/static_assert.hpp>
 #include <boost/type_traits/detail/yes_no_type.hpp>
 #include <boost/type_traits/is_class.hpp>
-#include "boost/type_traits/detail/ice_and.hpp"
+#include <boost/type_traits/detail/ice_and.hpp>
 #ifdef BOOST_NO_IS_ABSTRACT
 #include <boost/type_traits/is_polymorphic.hpp>
 #endif
+#endif
 // should be the last #include
-#include "boost/type_traits/detail/bool_trait_def.hpp"
+#include <boost/type_traits/detail/bool_trait_def.hpp>
 
 
 namespace boost {
 namespace detail{
 
-#ifndef BOOST_NO_IS_ABSTRACT
+#ifdef BOOST_IS_ABSTRACT
+template <class T>
+struct is_abstract_imp
+{
+   BOOST_STATIC_CONSTANT(bool, value = BOOST_IS_ABSTRACT(T));
+};
+#elif !defined(BOOST_NO_IS_ABSTRACT)
 template<class T>
 struct is_abstract_imp2
 {
@@ -83,9 +92,16 @@ struct is_abstract_imp2
    // GCC2 won't even parse this template if we embed the computation
    // of s1 in the computation of value.
 #ifdef __GNUC__
-   BOOST_STATIC_CONSTANT(unsigned, s1 = sizeof(is_abstract_imp2<T>::template check_sig<T>(0)));
+   BOOST_STATIC_CONSTANT(std::size_t, s1 = sizeof(is_abstract_imp2<T>::template check_sig<T>(0)));
 #else
-   BOOST_STATIC_CONSTANT(unsigned, s1 = sizeof(check_sig<T>(0)));
+#if BOOST_WORKAROUND(BOOST_MSVC_FULL_VER, >= 140050000)
+#pragma warning(push)
+#pragma warning(disable:6334)
+#endif
+   BOOST_STATIC_CONSTANT(std::size_t, s1 = sizeof(check_sig<T>(0)));
+#if BOOST_WORKAROUND(BOOST_MSVC_FULL_VER, >= 140050000)
+#pragma warning(pop)
+#endif
 #endif
     
    BOOST_STATIC_CONSTANT(bool, value = 
@@ -132,6 +148,6 @@ BOOST_TT_AUX_BOOL_TRAIT_DEF1(is_abstract,T,::boost::detail::is_polymorphic_imp<T
 
 } // namespace boost
 
-#include "boost/type_traits/detail/bool_trait_undef.hpp"
+#include <boost/type_traits/detail/bool_trait_undef.hpp>
 
 #endif //BOOST_TT_IS_ABSTRACT_CLASS_HPP

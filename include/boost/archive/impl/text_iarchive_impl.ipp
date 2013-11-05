@@ -12,7 +12,7 @@
 // implementation of basic_text_iprimitive overrides for the combination
 // of template parameters used to implement a text_iprimitive
 
-#include <cstddef> // size_t
+#include <cstddef> // size_t, NULL
 #include <boost/config.hpp>
 #if defined(BOOST_NO_STDC_NAMESPACE)
 namespace std{ 
@@ -53,7 +53,8 @@ text_iarchive_impl<Archive>::load(std::string &s)
     if(NULL != s.data())
     #endif
         s.resize(size);
-    is.read(const_cast<char *>(s.data()), size);
+    if(0 < size)
+        is.read(&(*s.begin()), size);
 }
 
 #ifndef BOOST_NO_CWCHAR
@@ -90,6 +91,18 @@ text_iarchive_impl<Archive>::load(std::wstring &ws)
 
 #endif // BOOST_NO_STD_WSTRING
 #endif // BOOST_NO_CWCHAR
+
+template<class Archive>
+BOOST_ARCHIVE_DECL(void)
+text_iarchive_impl<Archive>::load_override(class_name_type & t, int){
+    basic_text_iarchive<Archive>::load_override(t, 0);
+}
+
+template<class Archive>
+BOOST_ARCHIVE_DECL(void)
+text_iarchive_impl<Archive>::init(){
+    basic_text_iarchive<Archive>::init();
+}
 
 template<class Archive>
 BOOST_ARCHIVE_DECL(BOOST_PP_EMPTY()) 

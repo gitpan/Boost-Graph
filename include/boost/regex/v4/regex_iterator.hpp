@@ -23,8 +23,15 @@
 
 namespace boost{
 
+#ifdef BOOST_MSVC
+#pragma warning(push)
+#pragma warning(disable: 4103)
+#endif
 #ifdef BOOST_HAS_ABI_HEADERS
 #  include BOOST_ABI_PREFIX
+#endif
+#ifdef BOOST_MSVC
+#pragma warning(pop)
 #endif
 
 template <class BidirectionalIterator, 
@@ -57,15 +64,15 @@ public:
    { return what; }
    bool next()
    {
-      if(what.prefix().first != what[0].second)
-         flags |= match_prev_avail;
+      //if(what.prefix().first != what[0].second)
+      //   flags |= match_prev_avail;
       BidirectionalIterator next_start = what[0].second;
       match_flag_type f(flags);
-      if(!what.length())
+      if(!what.length() || (f & regex_constants::match_posix))
          f |= regex_constants::match_not_initial_null;
-      if(base != next_start)
-         f |= regex_constants::match_not_bob;
-      bool result = regex_search(next_start, end, what, re, f);
+      //if(base != next_start)
+      //   f |= regex_constants::match_not_bob;
+      bool result = regex_search(next_start, end, what, re, f, base);
       if(result)
          what.set_base(base);
       return result;
@@ -177,8 +184,15 @@ inline regex_iterator<typename std::basic_string<charT, ST, SA>::const_iterator,
    return regex_iterator<typename std::basic_string<charT, ST, SA>::const_iterator, charT, traits>(p.begin(), p.end(), e, m);
 }
 
+#ifdef BOOST_MSVC
+#pragma warning(push)
+#pragma warning(disable: 4103)
+#endif
 #ifdef BOOST_HAS_ABI_HEADERS
 #  include BOOST_ABI_SUFFIX
+#endif
+#ifdef BOOST_MSVC
+#pragma warning(pop)
 #endif
 
 } // namespace boost

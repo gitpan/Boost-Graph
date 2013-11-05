@@ -44,7 +44,7 @@ namespace boost
                                                                         \
             octonion<type>                unreal() const                \
             {                                                           \
-                return(octonion(static_cast<type>(0),b,c,d,e,f,g,h));   \
+                return( octonion<type>(static_cast<type>(0),b,c,d,e,f,g,h));   \
             }                                                           \
                                                                         \
             type                            R_component_1() const       \
@@ -4713,11 +4713,11 @@ namespace boost
             }
             else if    (n == 0)
             {
-                return(octonion<T>(1));
+                return(octonion<T>(static_cast<T>(1)));
             }
             else    /* n < 0 */
             {
-                return(pow(octonion<T>(1)/o,-n));
+                return(pow(octonion<T>(static_cast<T>(1))/o,-n));
             }
         }
         

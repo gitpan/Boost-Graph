@@ -16,11 +16,12 @@
 
 //  See http://www.boost.org for updates, documentation, and revision history.
 
-#include <cassert>
+#include <boost/assert.hpp>
 
 #include <boost/config.hpp> // for BOOST_DEDUCED_TYPENAME
-#include <boost/throw_exception.hpp>
-#include <boost/pfto.hpp>
+#include <boost/serialization/throw_exception.hpp>
+#include <boost/serialization/pfto.hpp>
+#include <boost/static_assert.hpp>
 
 #include <boost/iterator/transform_iterator.hpp>
 #include <boost/archive/iterators/dataflow_exception.hpp>
@@ -38,21 +39,25 @@ template<class CharType>
 struct to_6_bit {
     typedef CharType result_type;
     CharType operator()(CharType t) const{
-        const char lookup_table[] = {
+        const signed char lookup_table[] = {
             -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
             -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
             -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
-            52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
-            -1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
+            52,53,54,55,56,57,58,59,60,61,-1,-1,-1, 0,-1,-1, // render '=' as 0
+            -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
             15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
             -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
             41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1
         };
+        // metrowerks trips this assertion - how come?
+        #if ! defined(__MWERKS__)
+        BOOST_STATIC_ASSERT(128 == sizeof(lookup_table));
+        #endif
         signed char value = -1;
         if((unsigned)t <= 127)
             value = lookup_table[(unsigned)t];
         if(-1 == value)
-            boost::throw_exception(
+            boost::serialization::throw_exception(
                 dataflow_exception(dataflow_exception::invalid_base64_character)
             );
         return value;
@@ -94,7 +99,7 @@ public:
     template<class T>
     binary_from_base64(BOOST_PFTO_WRAPPER(T)  start) :
         super_t(
-            Base(BOOST_MAKE_PFTO_WRAPPER(static_cast<T>(start))), 
+            Base(BOOST_MAKE_PFTO_WRAPPER(static_cast< T >(start))), 
             detail::to_6_bit<CharType>()
         )
     {}

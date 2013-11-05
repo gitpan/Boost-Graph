@@ -9,6 +9,7 @@
 //  See http://www.boost.org for updates, documentation, and revision history.
 
 #include <cstddef> // size_t
+#include <cstddef> // NULL
 
 #include <boost/config.hpp>
 #if defined(BOOST_NO_STDC_NAMESPACE)
@@ -17,8 +18,8 @@ namespace std{
 } // namespace std
 #endif
 
-#include <boost/throw_exception.hpp>
-#include <boost/pfto.hpp>
+#include <boost/serialization/throw_exception.hpp>
+#include <boost/serialization/pfto.hpp>
 
 #include <boost/archive/basic_text_iprimitive.hpp>
 #include <boost/archive/codecvt_null.hpp>
@@ -31,6 +32,23 @@ namespace std{
 
 namespace boost { 
 namespace archive {
+
+namespace {
+    template<class CharType>
+    bool is_whitespace(CharType c);
+
+    template<>
+    bool is_whitespace(char t){
+        return 0 != std::isspace(t);
+    }
+
+    #ifndef BOOST_NO_CWCHAR
+    template<>
+    bool is_whitespace(wchar_t t){
+        return 0 != std::iswspace(t);
+    }
+    #endif
+}
 
 // translate base64 text into binary and copy into buffer
 // until buffer is full.
@@ -45,13 +63,15 @@ basic_text_iprimitive<IStream>::load_binary(
     if(0 == count)
         return;
         
-    assert(
+    BOOST_ASSERT(
         static_cast<std::size_t>((std::numeric_limits<std::streamsize>::max)())
         > (count + sizeof(CharType) - 1)/sizeof(CharType)
     );
         
     if(is.fail())
-        boost::throw_exception(archive_exception(archive_exception::stream_error));
+        boost::serialization::throw_exception(
+            archive_exception(archive_exception::input_stream_error)
+        );
     // convert from base64 to binary
     typedef BOOST_DEDUCED_TYPENAME
         iterators::transform_width<
@@ -66,40 +86,43 @@ basic_text_iprimitive<IStream>::load_binary(
             ,CharType
         > 
         binary;
-
-    binary ti_begin = binary(
+        
+    binary i = binary(
         BOOST_MAKE_PFTO_WRAPPER(
             iterators::istream_iterator<CharType>(is)
         )
     );
-                
+
     char * caddr = static_cast<char *>(address);
-    std::size_t padding = 2 - count % 3;
     
     // take care that we don't increment anymore than necessary
-    while(--count > 0){
-        *caddr++ = static_cast<char>(*ti_begin);
-        ++ti_begin;
+    while(count-- > 0){
+        *caddr++ = static_cast<char>(*i++);
     }
-    *caddr++ = static_cast<char>(*ti_begin);
-    
-    if(padding > 1)
-        ++ti_begin;
-        if(padding > 2)
-            ++ti_begin;
-}
 
+    // skip over any excess input
+    for(;;){
+        BOOST_DEDUCED_TYPENAME IStream::int_type r;
+        r = is.get();
+        if(is.eof())
+            break;
+        if(is_whitespace(static_cast<CharType>(r)))
+            break;
+    }
+}
+    
 template<class IStream>
 BOOST_ARCHIVE_OR_WARCHIVE_DECL(BOOST_PP_EMPTY())
 basic_text_iprimitive<IStream>::basic_text_iprimitive(
     IStream  &is_,
     bool no_codecvt
-) : 
+) :
+#ifndef BOOST_NO_STD_LOCALE
     is(is_),
     flags_saver(is_),
     precision_saver(is_),
     archive_locale(NULL),
-    locale_saver(is_)
+    locale_saver(* is_.rdbuf())
 {
     if(! no_codecvt){
         archive_locale.reset(
@@ -112,10 +135,17 @@ basic_text_iprimitive<IStream>::basic_text_iprimitive(
     }
     is >> std::noboolalpha;
 }
+#else
+    is(is_),
+    flags_saver(is_),
+    precision_saver(is_)
+{}
+#endif
 
 template<class IStream>
 BOOST_ARCHIVE_OR_WARCHIVE_DECL(BOOST_PP_EMPTY())
 basic_text_iprimitive<IStream>::~basic_text_iprimitive(){
+    is.sync();
 }
 
 } // namespace archive

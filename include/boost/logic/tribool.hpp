@@ -93,7 +93,7 @@ public:
    *
    * \throws nothrow
    */
-  tribool(bool value) : value(value? true_value : false_value) {}
+  tribool(bool initial_value) : value(initial_value? true_value : false_value) {}
 
   /**
    * Construct a new 3-state boolean value with an indeterminate value.
@@ -336,7 +336,7 @@ inline tribool operator==(tribool x, tribool y)
   if (indeterminate(x) || indeterminate(y))
     return indeterminate;
   else
-    return x && y || !x && !y;
+    return (x && y) || (!x && !y);
 }
 
 /**
@@ -399,7 +399,7 @@ inline tribool operator!=(tribool x, tribool y)
   if (indeterminate(x) || indeterminate(y))
     return indeterminate;
   else
-    return !(x && y || !x && !y);
+    return !((x && y) || (!x && !y));
 }
 
 /**
@@ -452,7 +452,7 @@ namespace boost {
 #define BOOST_TRIBOOL_THIRD_STATE(Name)                                 \
 inline bool                                                             \
 Name(boost::logic::tribool x,                                           \
-     boost::logic::detail::indeterminate_t dummy =                      \
+     boost::logic::detail::indeterminate_t =                            \
        boost::logic::detail::indeterminate_t())                         \
 { return x.value == boost::logic::tribool::indeterminate_value; }
 

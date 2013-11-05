@@ -8,6 +8,8 @@
 
 #include <boost/program_options/detail/convert.hpp>
 
+#include <iterator>
+
 namespace boost { namespace program_options {
 
     namespace detail {
@@ -27,18 +29,18 @@ namespace boost { namespace program_options {
     template<class charT>
     basic_command_line_parser<charT>::
     basic_command_line_parser(const std::vector<
-                              std::basic_string<charT> >& args)
-       : detail::cmdline(to_internal(args))
+                              std::basic_string<charT> >& xargs)
+       : detail::cmdline(to_internal(xargs))
     {}
 
 
     template<class charT>
     basic_command_line_parser<charT>::
-    basic_command_line_parser(int argc, charT* argv[])
+    basic_command_line_parser(int argc, const charT* const argv[])
     : detail::cmdline(
         // Explicit template arguments are required by gcc 3.3.1 
         // (at least mingw version), and do no harm on other compilers.
-        to_internal(detail::make_vector<charT, charT**>(argv+1, argv+argc)))
+        to_internal(detail::make_vector<charT, const charT* const*>(argv+1, argv+argc+!argc)))
     {}
 
     
@@ -62,9 +64,9 @@ namespace boost { namespace program_options {
 
     template<class charT>
     basic_command_line_parser<charT>& 
-    basic_command_line_parser<charT>::style(int style)
+    basic_command_line_parser<charT>::style(int xstyle)
     {
-        detail::cmdline::style(style);
+        detail::cmdline::style(xstyle);
         return *this;
     }
 
@@ -76,11 +78,33 @@ namespace boost { namespace program_options {
         return *this;
     }
 
+    template<class charT>
+    basic_command_line_parser<charT>& 
+    basic_command_line_parser<charT>::allow_unregistered()
+    {
+        detail::cmdline::allow_unregistered();
+        return *this;
+    }
+
+    template<class charT>
+    basic_command_line_parser<charT>& 
+    basic_command_line_parser<charT>::extra_style_parser(style_parser s)
+    {
+        detail::cmdline::extra_style_parser(s);
+        return *this;
+    }
+
+
+
     template<class charT>    
     basic_parsed_options<charT>
     basic_command_line_parser<charT>::run()
     {
-        parsed_options result(m_desc);
+        // save the canonical prefixes which were used by this cmdline parser
+        //    eventually inside the parsed results
+        //    This will be handy to format recognisable options
+        //    for diagnostic messages if everything blows up much later on
+        parsed_options result(m_desc, detail::cmdline::get_canonical_option_prefix());
         result.options = detail::cmdline::run();
 
         // Presense of parsed_options -> wparsed_options conversion
@@ -91,7 +115,7 @@ namespace boost { namespace program_options {
 
     template<class charT>
     basic_parsed_options<charT>
-    parse_command_line(int argc, charT* argv[],
+    parse_command_line(int argc, const charT* const argv[],
                        const options_description& desc,
                        int style,
                        function1<std::pair<std::string, std::string>, 
@@ -100,6 +124,26 @@ namespace boost { namespace program_options {
         return basic_command_line_parser<charT>(argc, argv).options(desc).
             style(style).extra_parser(ext).run();
     }
+
+    template<class charT>
+    std::vector< std::basic_string<charT> > 
+    collect_unrecognized(const std::vector< basic_option<charT> >& options,
+                         enum collect_unrecognized_mode mode)
+    {
+        std::vector< std::basic_string<charT> >  result;
+        for(unsigned i = 0; i < options.size(); ++i)
+        {
+            if (options[i].unregistered ||
+                (mode == include_positional && options[i].position_key != -1))
+            {
+                copy(options[i].original_tokens.begin(),
+                     options[i].original_tokens.end(),
+                     back_inserter(result));
+            }
+        }
+        return result;
+    }
+
 
 }}
 

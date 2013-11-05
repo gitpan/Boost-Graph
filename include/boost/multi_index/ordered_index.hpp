@@ -1,4 +1,4 @@
-/* Copyright 2003-2005 Joaquín M López Muñoz.
+/* Copyright 2003-2013 Joaquin M Lopez Munoz.
  * Distributed under the Boost Software License, Version 1.0.
  * (See accompanying file LICENSE_1_0.txt or copy at
  * http://www.boost.org/LICENSE_1_0.txt)
@@ -45,13 +45,18 @@
 #include <boost/call_traits.hpp>
 #include <boost/detail/no_exceptions_support.hpp>
 #include <boost/detail/workaround.hpp>
+#include <boost/foreach_fwd.hpp>
 #include <boost/iterator/reverse_iterator.hpp>
+#include <boost/mpl/bool.hpp>
+#include <boost/mpl/if.hpp>
 #include <boost/mpl/push_front.hpp>
 #include <boost/multi_index/detail/access_specifier.hpp>
-#include <boost/multi_index/detail/index_iterator.hpp>
+#include <boost/multi_index/detail/bidir_node_iterator.hpp>
+#include <boost/multi_index/detail/index_node_base.hpp>
 #include <boost/multi_index/detail/modify_key_adaptor.hpp>
 #include <boost/multi_index/detail/ord_index_node.hpp>
 #include <boost/multi_index/detail/ord_index_ops.hpp>
+#include <boost/multi_index/detail/safe_ctr_proxy.hpp>
 #include <boost/multi_index/detail/safe_mode.hpp>
 #include <boost/multi_index/detail/scope_guard.hpp>
 #include <boost/multi_index/detail/unbounded.hpp>
@@ -59,6 +64,7 @@
 #include <boost/multi_index/ordered_index_fwd.hpp>
 #include <boost/ref.hpp>
 #include <boost/tuple/tuple.hpp>
+#include <boost/type_traits/is_same.hpp>
 #include <utility>
 
 #if !defined(BOOST_MULTI_INDEX_DISABLE_SERIALIZATION)
@@ -83,7 +89,7 @@ namespace multi_index{
 
 namespace detail{
 
-/* ordered_index adds a layer of indexing to a given Super */
+/* ordered_index adds a layer of ordered indexing to a given Super */
 
 /* Most of the implementation of unique and non-unique indices is
  * shared. We tell from one another on instantiation time by using
@@ -97,21 +103,19 @@ template<
   typename KeyFromValue,typename Compare,
   typename SuperMeta,typename TagList,typename Category
 >
+class ordered_index:
+  BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS SuperMeta::type
 
 #if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
 #if BOOST_WORKAROUND(BOOST_MSVC,<1300)
-class ordered_index:
-  BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS SuperMeta::type,
-  public index_proxy<ordered_index_node<SuperMeta::type::node_type> >
+  ,public safe_ctr_proxy_impl<
+    bidir_node_iterator<
+      ordered_index_node<typename SuperMeta::type::node_type> >,
+    ordered_index<KeyFromValue,Compare,SuperMeta,TagList,Category> >
 #else
-class ordered_index:
-  BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS SuperMeta::type,
-  public safe_container<
+  ,public safe_mode::safe_container<
     ordered_index<KeyFromValue,Compare,SuperMeta,TagList,Category> >
 #endif
-#else
-class ordered_index:
-  BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS SuperMeta::type
 #endif
 
 { 
@@ -131,6 +135,10 @@ protected:
   typedef ordered_index_node<
     typename super::node_type>                       node_type;
 
+private:
+  typedef typename node_type::impl_type              node_impl_type;
+  typedef typename node_impl_type::pointer           node_impl_pointer;
+
 public:
   /* types */
 
@@ -147,16 +155,20 @@ public:
 
 #if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
 #if BOOST_WORKAROUND(BOOST_MSVC,<1300)
-  typedef index_iterator<node_type>                  iterator;
-  typedef index_iterator<node_type>                  const_iterator;
+  typedef safe_mode::safe_iterator<
+    bidir_node_iterator<node_type>,
+    safe_ctr_proxy<
+      bidir_node_iterator<node_type> > >             iterator;
 #else
-  typedef index_iterator<node_type,ordered_index>    iterator;
-  typedef index_iterator<node_type,ordered_index>    const_iterator;
+  typedef safe_mode::safe_iterator<
+    bidir_node_iterator<node_type>,
+    ordered_index>                                   iterator;
 #endif
 #else
-  typedef index_iterator<node_type>                  iterator;
-  typedef index_iterator<node_type>                  const_iterator;
+  typedef bidir_node_iterator<node_type>             iterator;
 #endif
+
+  typedef iterator                                   const_iterator;
 
   typedef std::size_t                                size_type;      
   typedef std::ptrdiff_t                             difference_type;
@@ -192,11 +204,11 @@ protected:
 private:
 #if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
 #if BOOST_WORKAROUND(BOOST_MSVC,<1300)
-  typedef index_proxy<
-      ordered_index_node<
-        typename super::node_type> >                 safe_super;
+  typedef safe_ctr_proxy_impl<
+    bidir_node_iterator<node_type>,
+    ordered_index>                                   safe_super;
 #else
-  typedef safe_container<ordered_index>              safe_super;
+  typedef safe_mode::safe_container<ordered_index>   safe_super;
 #endif
 #endif
 
@@ -234,7 +246,21 @@ public:
   const_reverse_iterator rbegin()const{return make_reverse_iterator(end());}
   reverse_iterator       rend(){return make_reverse_iterator(begin());}
   const_reverse_iterator rend()const{return make_reverse_iterator(begin());}
+  const_iterator         cbegin()const{return begin();}
+  const_iterator         cend()const{return end();}
+  const_reverse_iterator crbegin()const{return rbegin();}
+  const_reverse_iterator crend()const{return rend();}
  
+  iterator iterator_to(const value_type& x)
+  {
+    return make_iterator(node_from_value<node_type>(&x));
+  }
+
+  const_iterator iterator_to(const value_type& x)const
+  {
+    return make_iterator(node_from_value<node_type>(&x));
+  }
+
   /* capacity */
 
   bool      empty()const{return this->final_empty_();}
@@ -268,23 +294,14 @@ public:
     for(;first!=last;++first)hint=insert(hint,*first);
   }
 
-  void erase(iterator position)
+  iterator erase(iterator position)
   {
     BOOST_MULTI_INDEX_CHECK_VALID_ITERATOR(position);
     BOOST_MULTI_INDEX_CHECK_DEREFERENCEABLE_ITERATOR(position);
     BOOST_MULTI_INDEX_CHECK_IS_OWNER(position,*this);
     BOOST_MULTI_INDEX_ORD_INDEX_CHECK_INVARIANT;
-
-#if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
-    /* MSVC++ 6.0 optimizer on safe mode code chokes if this
-     * this is not added. Left it for all compilers as it does no
-     * harm.
-     */
-
-    position.detach();
-#endif
-
-    this->final_erase_(static_cast<final_node_type*>(position.get_node()));
+    this->final_erase_(static_cast<final_node_type*>(position++.get_node()));
+    return position;
   }
   
   size_type erase(key_param_type x)
@@ -293,13 +310,13 @@ public:
     std::pair<iterator,iterator> p=equal_range(x);
     size_type s=0;
     while(p.first!=p.second){
-      erase(p.first++);
+      p.first=erase(p.first);
       ++s;
     }
     return s;
   }
 
-  void erase(iterator first,iterator last)
+  iterator erase(iterator first,iterator last)
   {
     BOOST_MULTI_INDEX_CHECK_VALID_ITERATOR(first);
     BOOST_MULTI_INDEX_CHECK_VALID_ITERATOR(last);
@@ -308,8 +325,9 @@ public:
     BOOST_MULTI_INDEX_CHECK_VALID_RANGE(first,last);
     BOOST_MULTI_INDEX_ORD_INDEX_CHECK_INVARIANT;
     while(first!=last){
-      erase(first++);
+      first=erase(first);
     }
+    return first;
   }
 
   bool replace(iterator position,value_param_type x)
@@ -343,6 +361,27 @@ public:
       mod,static_cast<final_node_type*>(position.get_node()));
   }
 
+  template<typename Modifier,typename Rollback>
+  bool modify(iterator position,Modifier mod,Rollback back)
+  {
+    BOOST_MULTI_INDEX_CHECK_VALID_ITERATOR(position);
+    BOOST_MULTI_INDEX_CHECK_DEREFERENCEABLE_ITERATOR(position);
+    BOOST_MULTI_INDEX_CHECK_IS_OWNER(position,*this);
+    BOOST_MULTI_INDEX_ORD_INDEX_CHECK_INVARIANT;
+
+#if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
+    /* MSVC++ 6.0 optimizer on safe mode code chokes if this
+     * this is not added. Left it for all compilers as it does no
+     * harm.
+     */
+
+    position.detach();
+#endif
+
+    return this->final_modify_(
+      mod,back,static_cast<final_node_type*>(position.get_node()));
+  }
+  
   template<typename Modifier>
   bool modify_key(iterator position,Modifier mod)
   {
@@ -352,6 +391,19 @@ public:
     BOOST_MULTI_INDEX_ORD_INDEX_CHECK_INVARIANT;
     return modify(
       position,modify_key_adaptor<Modifier,value_type,KeyFromValue>(mod,key));
+  }
+
+  template<typename Modifier,typename Rollback>
+  bool modify_key(iterator position,Modifier mod,Rollback back)
+  {
+    BOOST_MULTI_INDEX_CHECK_VALID_ITERATOR(position);
+    BOOST_MULTI_INDEX_CHECK_DEREFERENCEABLE_ITERATOR(position);
+    BOOST_MULTI_INDEX_CHECK_IS_OWNER(position,*this);
+    BOOST_MULTI_INDEX_ORD_INDEX_CHECK_INVARIANT;
+    return modify(
+      position,
+      modify_key_adaptor<Modifier,value_type,KeyFromValue>(mod,key),
+      modify_key_adaptor<Rollback,value_type,KeyFromValue>(back,key));
   }
 
   void swap(ordered_index<KeyFromValue,Compare,SuperMeta,TagList,Category>& x)
@@ -369,8 +421,8 @@ public:
   /* observers */
 
   key_from_value key_extractor()const{return key;}
-  key_compare    key_comp()const{return comp;}
-  value_compare  value_comp()const{return value_compare(key,comp);}
+  key_compare    key_comp()const{return comp_;}
+  value_compare  value_comp()const{return value_compare(key,comp_);}
 
   /* set operations */
 
@@ -381,20 +433,20 @@ public:
   template<typename CompatibleKey>
   iterator find(const CompatibleKey& x)const
   {
-    return make_iterator(ordered_index_find(header(),key,x,comp));
+    return make_iterator(ordered_index_find(root(),header(),key,x,comp_));
   }
 
   template<typename CompatibleKey,typename CompatibleCompare>
   iterator find(
     const CompatibleKey& x,const CompatibleCompare& comp)const
   {
-    return make_iterator(ordered_index_find(header(),key,x,comp));
+    return make_iterator(ordered_index_find(root(),header(),key,x,comp));
   }
 
   template<typename CompatibleKey>
   size_type count(const CompatibleKey& x)const
   {
-    return count(x,comp);
+    return count(x,comp_);
   }
 
   template<typename CompatibleKey,typename CompatibleCompare>
@@ -408,42 +460,51 @@ public:
   template<typename CompatibleKey>
   iterator lower_bound(const CompatibleKey& x)const
   {
-    return make_iterator(ordered_index_lower_bound(header(),key,x,comp));
+    return make_iterator(
+      ordered_index_lower_bound(root(),header(),key,x,comp_));
   }
 
   template<typename CompatibleKey,typename CompatibleCompare>
   iterator lower_bound(
     const CompatibleKey& x,const CompatibleCompare& comp)const
   {
-    return make_iterator(ordered_index_lower_bound(header(),key,x,comp));
+    return make_iterator(
+      ordered_index_lower_bound(root(),header(),key,x,comp));
   }
 
   template<typename CompatibleKey>
   iterator upper_bound(const CompatibleKey& x)const
   {
-    return make_iterator(ordered_index_upper_bound(header(),key,x,comp));
+    return make_iterator(
+      ordered_index_upper_bound(root(),header(),key,x,comp_));
   }
 
   template<typename CompatibleKey,typename CompatibleCompare>
   iterator upper_bound(
     const CompatibleKey& x,const CompatibleCompare& comp)const
   {
-    return make_iterator(ordered_index_upper_bound(header(),key,x,comp));
+    return make_iterator(
+      ordered_index_upper_bound(root(),header(),key,x,comp));
   }
 
   template<typename CompatibleKey>
   std::pair<iterator,iterator> equal_range(
     const CompatibleKey& x)const
   {
-    return equal_range(x,comp);
+    std::pair<node_type*,node_type*> p=
+      ordered_index_equal_range(root(),header(),key,x,comp_);
+    return std::pair<iterator,iterator>(
+      make_iterator(p.first),make_iterator(p.second));
   }
 
   template<typename CompatibleKey,typename CompatibleCompare>
   std::pair<iterator,iterator> equal_range(
     const CompatibleKey& x,const CompatibleCompare& comp)const
   {
+    std::pair<node_type*,node_type*> p=
+      ordered_index_equal_range(root(),header(),key,x,comp);
     return std::pair<iterator,iterator>(
-      lower_bound(x,comp),upper_bound(x,comp));
+      make_iterator(p.first),make_iterator(p.second));
   }
 
   /* range */
@@ -452,25 +513,28 @@ public:
   std::pair<iterator,iterator>
   range(LowerBounder lower,UpperBounder upper)const
   {
-    std::pair<iterator,iterator> p(
-      lower_range(lower),upper_range(upper));
-    if(p.second!=end()&&(p.first==end()||comp(key(*p.second),key(*p.first)))){
-      p.second=p.first;
-    }
-    return p;
+    typedef typename mpl::if_<
+      is_same<LowerBounder,unbounded_type>,
+      BOOST_DEDUCED_TYPENAME mpl::if_<
+        is_same<UpperBounder,unbounded_type>,
+        both_unbounded_tag,
+        lower_unbounded_tag
+      >::type,
+      BOOST_DEDUCED_TYPENAME mpl::if_<
+        is_same<UpperBounder,unbounded_type>,
+        upper_unbounded_tag,
+        none_unbounded_tag
+      >::type
+    >::type dispatch;
+
+    return range(lower,upper,dispatch());
   }
 
 BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
   ordered_index(const ctor_args_list& args_list,const allocator_type& al):
     super(args_list.get_tail(),al),
-
-#if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)&&\
-    BOOST_WORKAROUND(BOOST_MSVC,<1300)
-    safe_super(final_header()),
-#endif
-
     key(tuples::get<0>(args_list.get_head())),
-    comp(tuples::get<1>(args_list.get_head()))
+    comp_(tuples::get<1>(args_list.get_head()))
   {
     empty_initialize();
   }
@@ -479,13 +543,12 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
     const ordered_index<KeyFromValue,Compare,SuperMeta,TagList,Category>& x):
     super(x),
 
-#if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)&&\
-    BOOST_WORKAROUND(BOOST_MSVC,<1300)
-    safe_super(final_header()),
+#if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
+    safe_super(),
 #endif
 
     key(x.key),
-    comp(x.comp)
+    comp_(x.comp_)
   {
     /* Copy ctor just takes the key and compare objects from x. The rest is
      * done in subsequent call to copy_().
@@ -535,8 +598,8 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
 
         cpy->color()=org->color();
 
-        ordered_index_node_impl* parent_org=org->parent();
-        if(!parent_org)cpy->parent()=0;
+        node_impl_pointer parent_org=org->parent();
+        if(parent_org==node_impl_pointer(0))cpy->parent()=node_impl_pointer(0);
         else{
           node_type* parent_cpy=map.find(
             static_cast<final_node_type*>(node_type::from_impl(parent_org)));
@@ -550,8 +613,10 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
           }
         }
 
-        if(!org->left())cpy->left()=0;
-        if(!org->right())cpy->right()=0;
+        if(org->left()==node_impl_pointer(0))
+          cpy->left()=node_impl_pointer(0);
+        if(org->right()==node_impl_pointer(0))
+          cpy->right()=node_impl_pointer(0);
       }
     }
     
@@ -560,53 +625,37 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
 
   node_type* insert_(value_param_type v,node_type* x)
   {
-    node_type* res=link2(key(v),x,Category());
-    if(res!=x)return res;
-    else{
-      BOOST_TRY{
-        res=static_cast<node_type*>(super::insert_(v,x));
-        if(res!=x){
-          ordered_index_node_impl::rebalance_for_erase(
-            x->impl(),header()->parent(),header()->left(),header()->right());
-        }
-        return res;
-      }
-      BOOST_CATCH(...){
-        ordered_index_node_impl::rebalance_for_erase(
-          x->impl(),header()->parent(),header()->left(),header()->right());
-        BOOST_RETHROW;
-      }
-      BOOST_CATCH_END
+    link_info inf;
+    if(!link_point(key(v),inf,Category())){
+      return node_type::from_impl(inf.pos);
     }
+
+    node_type* res=static_cast<node_type*>(super::insert_(v,x));
+    if(res==x){
+      node_impl_type::link(x->impl(),inf.side,inf.pos,header()->impl());
+    }
+    return res;
   }
 
   node_type* insert_(value_param_type v,node_type* position,node_type* x)
   {
-    node_type* res=link3(key(v),position,x,Category());
-    if(res!=x)return res;
-    else{
-      BOOST_TRY{
-        res=static_cast<node_type*>(super::insert_(v,position,x));
-        if(res!=x){
-          ordered_index_node_impl::rebalance_for_erase(
-            x->impl(),header()->parent(),header()->left(),header()->right());
-        }
-        return res;
-      }
-      BOOST_CATCH(...){
-        ordered_index_node_impl::rebalance_for_erase(
-          x->impl(),header()->parent(),header()->left(),header()->right());
-        BOOST_RETHROW;
-      }
-      BOOST_CATCH_END
+    link_info inf;
+    if(!hinted_link_point(key(v),position,inf,Category())){
+      return node_type::from_impl(inf.pos);
     }
+
+    node_type* res=static_cast<node_type*>(super::insert_(v,position,x));
+    if(res==x){
+      node_impl_type::link(x->impl(),inf.side,inf.pos,header()->impl());
+    }
+    return res;
   }
 
   void erase_(node_type* x)
   {
-    super::erase_(x);
-    ordered_index_node_impl::rebalance_for_erase(
+    node_impl_type::rebalance_for_erase(
       x->impl(),header()->parent(),header()->left(),header()->right());
+    super::erase_(x);
 
 #if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
     detach_iterators(x);
@@ -624,14 +673,14 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
     empty_initialize();
 
 #if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
-    safe_super::detach_all_iterators();
+    safe_super::detach_dereferenceable_iterators();
 #endif
   }
 
   void swap_(ordered_index<KeyFromValue,Compare,SuperMeta,TagList,Category>& x)
   {
     std::swap(key,x.key);
-    std::swap(comp,x.comp);
+    std::swap(comp_,x.comp_);
 
 #if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
     safe_super::swap(x);
@@ -646,41 +695,23 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
       return super::replace_(v,x);
     }
 
-    node_type* prior=x;
-    node_type::decrement(prior);
     node_type* next=x;
     node_type::increment(next);
 
-    ordered_index_node_impl::rebalance_for_erase(
+    node_impl_type::rebalance_for_erase(
       x->impl(),header()->parent(),header()->left(),header()->right());
 
     BOOST_TRY{
-      if(link2(key(v),x,Category())!=x){
-        ordered_index_node_impl::restore(
-          x->impl(),prior->impl(),next->impl(),header()->impl());
-        return false;
+      link_info inf;
+      if(link_point(key(v),inf,Category())&&super::replace_(v,x)){
+        node_impl_type::link(x->impl(),inf.side,inf.pos,header()->impl());
+        return true;
       }
-
-      BOOST_TRY{
-        if(!super::replace_(v,x)){
-          ordered_index_node_impl::rebalance_for_erase(
-            x->impl(),header()->parent(),header()->left(),header()->right());
-          ordered_index_node_impl::restore(
-            x->impl(),prior->impl(),next->impl(),header()->impl());
-          return false;
-        }
-        else return true;
-      }
-      BOOST_CATCH(...){
-        ordered_index_node_impl::rebalance_for_erase(
-          x->impl(),header()->parent(),header()->left(),header()->right());
-        BOOST_RETHROW;
-      }
-      BOOST_CATCH_END
+      node_impl_type::restore(x->impl(),next->impl(),header()->impl());
+      return false;
     }
     BOOST_CATCH(...){
-      ordered_index_node_impl::restore(
-        x->impl(),prior->impl(),next->impl(),header()->impl());
+      node_impl_type::restore(x->impl(),next->impl(),header()->impl());
       BOOST_RETHROW;
     }
     BOOST_CATCH_END
@@ -690,7 +721,7 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
   {
     bool b;
     BOOST_TRY{
-      b=in_place(x->value,x,Category());
+      b=in_place(x->value(),x,Category());
     }
     BOOST_CATCH(...){
       erase_(x);
@@ -698,10 +729,11 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
     }
     BOOST_CATCH_END
     if(!b){
-      ordered_index_node_impl::rebalance_for_erase(
+      node_impl_type::rebalance_for_erase(
         x->impl(),header()->parent(),header()->left(),header()->right());
       BOOST_TRY{
-        if(link2(key(x->value),x,Category())!=x){
+        link_info inf;
+        if(!link_point(key(x->value()),inf,Category())){
           super::erase_(x);
 
 #if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
@@ -709,6 +741,7 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
 #endif
           return false;
         }
+        node_impl_type::link(x->impl(),inf.side,inf.pos,header()->impl());
       }
       BOOST_CATCH(...){
         super::erase_(x);
@@ -724,7 +757,7 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
 
     BOOST_TRY{
       if(!super::modify_(x)){
-        ordered_index_node_impl::rebalance_for_erase(
+        node_impl_type::rebalance_for_erase(
           x->impl(),header()->parent(),header()->left(),header()->right());
 
 #if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
@@ -736,13 +769,42 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
       else return true;
     }
     BOOST_CATCH(...){
-      ordered_index_node_impl::rebalance_for_erase(
+      node_impl_type::rebalance_for_erase(
         x->impl(),header()->parent(),header()->left(),header()->right());
 
 #if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
       detach_iterators(x);
 #endif
 
+      BOOST_RETHROW;
+    }
+    BOOST_CATCH_END
+  }
+
+  bool modify_rollback_(node_type* x)
+  {
+    if(in_place(x->value(),x,Category())){
+      return super::modify_rollback_(x);
+    }
+
+    node_type* next=x;
+    node_type::increment(next);
+
+    node_impl_type::rebalance_for_erase(
+      x->impl(),header()->parent(),header()->left(),header()->right());
+
+    BOOST_TRY{
+      link_info inf;
+      if(link_point(key(x->value()),inf,Category())&&
+         super::modify_rollback_(x)){
+        node_impl_type::link(x->impl(),inf.side,inf.pos,header()->impl());
+        return true;
+      }
+      node_impl_type::restore(x->impl(),next->impl(),header()->impl());
+      return false;
+    }
+    BOOST_CATCH(...){
+      node_impl_type::restore(x->impl(),next->impl(),header()->impl());
       BOOST_RETHROW;
     }
     BOOST_CATCH_END
@@ -778,7 +840,7 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
     else{
       if((size_type)std::distance(begin(),end())!=size())return false;
 
-      std::size_t len=ordered_index_node_impl::black_count(
+      std::size_t len=node_impl_type::black_count(
         leftmost()->impl(),root()->impl());
       for(const_iterator it=begin(),it_end=end();it!=it_end;++it){
         node_type* x=it.get_node();
@@ -789,19 +851,16 @@ BOOST_MULTI_INDEX_PROTECTED_IF_MEMBER_TEMPLATE_FRIENDS:
           if((left_x&&left_x->color()==red)||
              (right_x&&right_x->color()==red))return false;
         }
-        if(left_x&&comp(key(x->value),key(left_x->value)))return false;
-        if(right_x&&comp(key(right_x->value),key(x->value)))return false;
+        if(left_x&&comp_(key(x->value()),key(left_x->value())))return false;
+        if(right_x&&comp_(key(right_x->value()),key(x->value())))return false;
         if(!left_x&&!right_x&&
-           ordered_index_node_impl::black_count(
-             x->impl(),root()->impl())!=len)
+           node_impl_type::black_count(x->impl(),root()->impl())!=len)
           return false;
       }
     
-      if(leftmost()->impl()!=
-         ordered_index_node_impl::minimum(root()->impl()))
+      if(leftmost()->impl()!=node_impl_type::minimum(root()->impl()))
         return false;
-      if(rightmost()->impl()!=
-         ordered_index_node_impl::maximum(root()->impl()))
+      if(rightmost()->impl()!=node_impl_type::maximum(root()->impl()))
         return false;
     }
 
@@ -828,118 +887,156 @@ private:
     header()->color()=red;
     /* used to distinguish header() from root, in iterator.operator++ */
     
-    header()->parent()=0;
+    header()->parent()=node_impl_pointer(0);
     header()->left()=header()->impl();
     header()->right()=header()->impl();
   }
 
-  node_type* link4(key_param_type k,node_type* x,node_type* y,node_type* z)
+  struct link_info
   {
-    if(x!=0||y==header()||comp(k,key(y->value))){
-      y->left()=z->impl(); /* also makes leftmost()=z when y==header() */
-      if (y==header()){
-        header()->parent()=z->impl();
-        header()->right()=z->impl();
-      }
-      else if(y==leftmost()){
-        header()->left()=z->impl();
-        /* maintain leftmost() pointing to min node */
-      }
-    }
-    else{
-      y->right()=z->impl();
-      if(y==rightmost()){
-        header()->right()=z->impl();
-        /* maintain rightmost() pointing to max node */
-      }
-    }
-    z->parent()=y->impl();
-    z->left()=0;
-    z->right()=0;
-    ordered_index_node_impl::rebalance(z->impl(),header()->parent());
-    return z;
-  }
+    link_info():side(to_left){}
 
-  node_type* link2(key_param_type k,node_type* z,ordered_unique_tag)
+    ordered_index_side side;
+    node_impl_pointer  pos;
+  };
+
+  bool link_point(key_param_type k,link_info& inf,ordered_unique_tag)
   {
     node_type* y=header();
     node_type* x=root();
     bool c=true;
     while(x){
       y=x;
-      c=comp(k,key(x->value));
+      c=comp_(k,key(x->value()));
       x=node_type::from_impl(c?x->left():x->right());
     }
-    iterator j=make_iterator(y);   
+    node_type* yy=y;
     if(c){
-      if(j==begin())return link4(k,x,y,z);
-      else --j;
+      if(yy==leftmost()){
+        inf.side=to_left;
+        inf.pos=y->impl();
+        return true;
+      }
+      else node_type::decrement(yy);
     }
 
-    if(comp(key(*j),k))return link4(k,x,y,z);
-    else return j.get_node();
+    if(comp_(key(yy->value()),k)){
+      inf.side=c?to_left:to_right;
+      inf.pos=y->impl();
+      return true;
+    }
+    else{
+      inf.pos=yy->impl();
+      return false;
+    }
   }
 
-  node_type* link2(key_param_type k,node_type* z,ordered_non_unique_tag)
+  bool link_point(key_param_type k,link_info& inf,ordered_non_unique_tag)
   {
     node_type* y=header();
     node_type* x=root();
+    bool c=true;
     while (x){
      y=x;
-     x=node_type::from_impl(comp(k,key(x->value))?x->left():x->right());
+     c=comp_(k,key(x->value()));
+     x=node_type::from_impl(c?x->left():x->right());
     }
-    return link4(k,x,y,z);
+    inf.side=c?to_left:to_right;
+    inf.pos=y->impl();
+    return true;
   }
 
-  node_type* link3(
-    key_param_type k,node_type* position,node_type* z,ordered_unique_tag)
+  bool lower_link_point(key_param_type k,link_info& inf,ordered_non_unique_tag)
+  {
+    node_type* y=header();
+    node_type* x=root();
+    bool c=false;
+    while (x){
+     y=x;
+     c=comp_(key(x->value()),k);
+     x=node_type::from_impl(c?x->right():x->left());
+    }
+    inf.side=c?to_right:to_left;
+    inf.pos=y->impl();
+    return true;
+  }
+
+  bool hinted_link_point(
+    key_param_type k,node_type* position,link_info& inf,ordered_unique_tag)
   {
     if(position->impl()==header()->left()){ 
-      if(size()>0&&comp(k,key(position->value))){
-        return link4(k,position,position,z);
+      if(size()>0&&comp_(k,key(position->value()))){
+        inf.side=to_left;
+        inf.pos=position->impl();
+        return true;
       }
-      else return link2(k,z,ordered_unique_tag());
+      else return link_point(k,inf,ordered_unique_tag());
     } 
     else if(position==header()){ 
-      if(comp(key(rightmost()->value),k)){
-        return link4(k,0,rightmost(),z);
+      if(comp_(key(rightmost()->value()),k)){
+        inf.side=to_right;
+        inf.pos=rightmost()->impl();
+        return true;
       }
-      else return link2(k,z,ordered_unique_tag());
+      else return link_point(k,inf,ordered_unique_tag());
     } 
     else{
       node_type* before=position;
       node_type::decrement(before);
-      if(comp(key(before->value),k)&&comp(k,key(position->value))){
-        if(before->right()==0)return link4(k,0,before,z); 
-        else return link4(k,position,position,z);
+      if(comp_(key(before->value()),k)&&comp_(k,key(position->value()))){
+        if(before->right()==node_impl_pointer(0)){
+          inf.side=to_right;
+          inf.pos=before->impl();
+          return true;
+        }
+        else{
+          inf.side=to_left;
+          inf.pos=position->impl();
+          return true;
+        }
       } 
-      else return link2(k,z,ordered_unique_tag());
+      else return link_point(k,inf,ordered_unique_tag());
     }
   }
 
-  node_type* link3(
-    key_param_type k,node_type* position,node_type* z,ordered_non_unique_tag)
+  bool hinted_link_point(
+    key_param_type k,node_type* position,link_info& inf,ordered_non_unique_tag)
   {
     if(position->impl()==header()->left()){ 
-      if(size()>0&&!comp(key(position->value),k)){
-        return link4(k,position,position,z);
+      if(size()>0&&!comp_(key(position->value()),k)){
+        inf.side=to_left;
+        inf.pos=position->impl();
+        return true;
       }
-      else return link2(k,z,ordered_non_unique_tag());
+      else return lower_link_point(k,inf,ordered_non_unique_tag());
     } 
     else if(position==header()){
-      if(!comp(k,key(rightmost()->value))){
-        return link4(k,0,rightmost(),z);
+      if(!comp_(k,key(rightmost()->value()))){
+        inf.side=to_right;
+        inf.pos=rightmost()->impl();
+        return true;
       }
-      else return link2(k,z,ordered_non_unique_tag());
+      else return link_point(k,inf,ordered_non_unique_tag());
     } 
     else{
       node_type* before=position;
       node_type::decrement(before);
-      if (!comp(k,key(before->value))&&!comp(key(position->value),k)){
-        if(before->right()==0)return link4(k,0,before,z); 
-        else return link4(k,position,position,z);
+      if(!comp_(k,key(before->value()))){
+        if(!comp_(key(position->value()),k)){
+          if(before->right()==node_impl_pointer(0)){
+            inf.side=to_right;
+            inf.pos=before->impl();
+            return true;
+          }
+          else{
+            inf.side=to_left;
+            inf.pos=position->impl();
+            return true;
+          }
+        }
+        else return lower_link_point(k,inf,ordered_non_unique_tag());
       } 
-      else return link2(k,z,ordered_non_unique_tag());
+      else return link_point(k,inf,ordered_non_unique_tag());
     }
   }
 
@@ -947,8 +1044,8 @@ private:
   {
     if(!x)return;
 
-    if(x!=leftmost())delete_all_nodes(node_type::from_impl(x->left()));
-    if(x!=rightmost())delete_all_nodes(node_type::from_impl(x->right()));
+    delete_all_nodes(node_type::from_impl(x->left()));
+    delete_all_nodes(node_type::from_impl(x->right()));
     this->final_delete_node_(static_cast<final_node_type*>(x));
   }
 
@@ -958,12 +1055,12 @@ private:
     if(x!=leftmost()){
       y=x;
       node_type::decrement(y);
-      if(!comp(key(y->value),key(v)))return false;
+      if(!comp_(key(y->value()),key(v)))return false;
     }
 
     y=x;
     node_type::increment(y);
-    return y==header()||comp(key(v),key(y->value));
+    return y==header()||comp_(key(v),key(y->value()));
   }
 
   bool in_place(value_param_type v,node_type* x,ordered_non_unique_tag)
@@ -972,12 +1069,12 @@ private:
     if(x!=leftmost()){
       y=x;
       node_type::decrement(y);
-      if(comp(key(v),key(y->value)))return false;
+      if(comp_(key(v),key(y->value())))return false;
     }
 
     y=x;
     node_type::increment(y);
-    return y==header()||!comp(key(y->value),key(v));
+    return y==header()||!comp_(key(y->value()),key(v));
   }
 
 #if defined(BOOST_MULTI_INDEX_ENABLE_SAFE_MODE)
@@ -988,48 +1085,84 @@ private:
   }
 #endif
 
-  template<typename LowerBounder>
-  iterator lower_range(LowerBounder lower)const
+  template<typename LowerBounder,typename UpperBounder>
+  std::pair<iterator,iterator>
+  range(LowerBounder lower,UpperBounder upper,none_unbounded_tag)const
   {
     node_type* y=header();
     node_type* z=root();
 
     while(z){
-      if(lower(key(z->value))){
+      if(!lower(key(z->value()))){
+        z=node_type::from_impl(z->right());
+      }
+      else if(!upper(key(z->value()))){
         y=z;
         z=node_type::from_impl(z->left());
       }
-      else z=node_type::from_impl(z->right());
+      else{
+        return std::pair<iterator,iterator>(
+          make_iterator(
+            lower_range(node_type::from_impl(z->left()),z,lower)),
+          make_iterator(
+            upper_range(node_type::from_impl(z->right()),y,upper)));
+      }
     }
 
-    return make_iterator(y);
+    return std::pair<iterator,iterator>(make_iterator(y),make_iterator(y));
   }
 
-  iterator lower_range(unbounded_type)const
+  template<typename LowerBounder,typename UpperBounder>
+  std::pair<iterator,iterator>
+  range(LowerBounder,UpperBounder upper,lower_unbounded_tag)const
   {
-    return begin();
+    return std::pair<iterator,iterator>(
+      begin(),
+      make_iterator(upper_range(root(),header(),upper)));
+  }
+
+  template<typename LowerBounder,typename UpperBounder>
+  std::pair<iterator,iterator>
+  range(LowerBounder lower,UpperBounder,upper_unbounded_tag)const
+  {
+    return std::pair<iterator,iterator>(
+      make_iterator(lower_range(root(),header(),lower)),
+      end());
+  }
+
+  template<typename LowerBounder,typename UpperBounder>
+  std::pair<iterator,iterator>
+  range(LowerBounder,UpperBounder,both_unbounded_tag)const
+  {
+    return std::pair<iterator,iterator>(begin(),end());
+  }
+
+  template<typename LowerBounder>
+  node_type * lower_range(node_type* top,node_type* y,LowerBounder lower)const
+  {
+    while(top){
+      if(lower(key(top->value()))){
+        y=top;
+        top=node_type::from_impl(top->left());
+      }
+      else top=node_type::from_impl(top->right());
+    }
+
+    return y;
   }
 
   template<typename UpperBounder>
-  iterator upper_range(UpperBounder upper)const
+  node_type * upper_range(node_type* top,node_type* y,UpperBounder upper)const
   {
-    node_type* y=header();
-    node_type* z=root();
-
-    while(z){
-      if(!upper(key(z->value))){
-        y=z;
-        z=node_type::from_impl(z->left());
+    while(top){
+      if(!upper(key(top->value()))){
+        y=top;
+        top=node_type::from_impl(top->left());
       }
-      else z=node_type::from_impl(z->right());
+      else top=node_type::from_impl(top->right());
     }
 
-    return make_iterator(y);
-  }
-
-  iterator upper_range(unbounded_type)const
-  {
-    return end();
+    return y;
   }
 
 #if !defined(BOOST_MULTI_INDEX_DISABLE_SERIALIZATION)
@@ -1076,33 +1209,28 @@ private:
 
   void rearranger(node_type* position,node_type *x)
   {
-    node_type* before;
-    if(!position){
-      before=position=lower_bound(key(x->value)).get_node();
-      node_type::decrement(before);
+    if(!position||comp_(key(position->value()),key(x->value()))){
+      position=lower_bound(key(x->value())).get_node();
     }
-    else{
-      before=position;
-      node_type::increment(position);
+    else if(comp_(key(x->value()),key(position->value()))){
+      /* inconsistent rearrangement */
+      throw_exception(
+        archive::archive_exception(
+          archive::archive_exception::other_exception));
     }
-    if(position!=x){
-      /* check the rearrangement is consistent */
-      if(!in_place(x->value,position,Category())){
-        throw_exception(
-          archive::archive_exception(
-            archive::archive_exception::other_exception));
-      }
+    else node_type::increment(position);
 
-      ordered_index_node_impl::rebalance_for_erase(
+    if(position!=x){
+      node_impl_type::rebalance_for_erase(
         x->impl(),header()->parent(),header()->left(),header()->right());
-      ordered_index_node_impl::restore(
-        x->impl(),before->impl(),position->impl(),header()->impl());
+      node_impl_type::restore(
+        x->impl(),position->impl(),header()->impl());
     }
   }
 #endif /* serialization */
 
   key_from_value key;
-  key_compare    comp;
+  key_compare    comp_;
 
 #if defined(BOOST_MULTI_INDEX_ENABLE_INVARIANT_CHECKING)&&\
     BOOST_WORKAROUND(__MWERKS__,<=0x3003)
@@ -1258,6 +1386,20 @@ struct ordered_non_unique
 } /* namespace multi_index */
 
 } /* namespace boost */
+
+/* Boost.Foreach compatibility */
+
+template<
+  typename KeyFromValue,typename Compare,
+  typename SuperMeta,typename TagList,typename Category
+>
+inline boost::mpl::true_* boost_foreach_is_noncopyable(
+  boost::multi_index::detail::ordered_index<
+    KeyFromValue,Compare,SuperMeta,TagList,Category>*&,
+  boost::foreach::tag)
+{
+  return 0;
+}
 
 #undef BOOST_MULTI_INDEX_ORD_INDEX_CHECK_INVARIANT
 

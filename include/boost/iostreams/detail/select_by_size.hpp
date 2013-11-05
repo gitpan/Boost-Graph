@@ -1,4 +1,5 @@
-// (C) Copyright Jonathan Turkanis 2004.
+// (C) Copyright 2008 CodeRage, LLC (turkanis at coderage dot com)
+// (C) Copyright 2004-2007 Jonathan Turkanis
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt.)
 
@@ -145,7 +146,8 @@ template<unsigned Size> struct select_by_size;
 
 //----------Specializations of SELECT_BY_SIZE (outside main inclued guards)---//
 
-#if BOOST_SELECT_BY_SIZE_MAX_CASE > SELECT_BY_SIZE_MAX_SPECIALIZED
+#if defined(BOOST_SELECT_BY_SIZE_MAX_CASE) && \
+    BOOST_SELECT_BY_SIZE_MAX_CASE > SELECT_BY_SIZE_MAX_SPECIALIZED
 
 #define BOOST_PP_LOCAL_MACRO(n) SELECT_BY_SIZE_SPEC(n)
 #define BOOST_PP_LOCAL_LIMITS \

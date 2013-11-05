@@ -17,6 +17,11 @@
 #include <vector>
 #include <utility>
 
+#if defined(BOOST_MSVC)
+#   pragma warning (push)
+#   pragma warning (disable:4251) // class 'std::vector<_Ty>' needs to have dll-interface to be used by clients of class 'boost::program_options::basic_parsed_options<wchar_t>'
+#endif
+
 namespace boost { namespace program_options {
 
     class options_description;
@@ -31,8 +36,8 @@ namespace boost { namespace program_options {
     template<class charT>
     class basic_parsed_options {
     public:
-        explicit basic_parsed_options(const options_description* description) 
-        : description(description) {}
+        explicit basic_parsed_options(const options_description* xdescription, int options_prefix = 0) 
+        : description(xdescription), m_options_prefix(options_prefix) {}
         /** Options found in the source. */
         std::vector< basic_option<charT> > options;
         /** Options description that was used for parsing. 
@@ -41,6 +46,17 @@ namespace boost { namespace program_options {
             up to the caller. Can be NULL.
          */
         const options_description* description;
+
+        /** Mainly used for the diagnostic messages in exceptions.
+         *  The canonical option prefix  for the parser which generated these results,
+         *  depending on the settings for basic_command_line_parser::style() or
+         *  cmdline::style(). In order of precedence of command_line_style enums:
+         *      allow_long
+         *      allow_long_disguise
+         *      allow_dash_for_short
+         *      allow_slash_for_short
+        */ 
+        int m_options_prefix;
     };
 
     /** Specialization of basic_parsed_options which:
@@ -59,6 +75,17 @@ namespace boost { namespace program_options {
         /** Stores UTF8 encoded options that were passed to constructor,
             to avoid reverse conversion in some cases. */
         basic_parsed_options<char> utf8_encoded_options;        
+
+        /** Mainly used for the diagnostic messages in exceptions.
+         *  The canonical option prefix  for the parser which generated these results,
+         *  depending on the settings for basic_command_line_parser::style() or
+         *  cmdline::style(). In order of precedence of command_line_style enums:
+         *      allow_long
+         *      allow_long_disguise
+         *      allow_dash_for_short
+         *      allow_slash_for_short
+        */ 
+        int m_options_prefix;
     };
 
     typedef basic_parsed_options<char> parsed_options;
@@ -73,13 +100,16 @@ namespace boost { namespace program_options {
     /** Command line parser.
 
         The class allows one to specify all the information needed for parsing
-        and to parser the parse the command line. It is primarily needed to
+        and to parse the command line. It is primarily needed to
         emulate named function parameters -- a regular function with 5
         parameters will be hard to use and creating overloads with a smaller
         nuber of parameters will be confusing.
 
         For the most common case, the function parse_command_line is a better 
         alternative.        
+
+        There are two typedefs -- command_line_parser and wcommand_line_parser,
+        for charT == char and charT == wchar_t cases.
     */
     template<class charT>
     class basic_command_line_parser : private detail::cmdline {
@@ -90,9 +120,9 @@ namespace boost { namespace program_options {
         basic_command_line_parser(const std::vector<
                                   std::basic_string<charT> >& args);
         /** Creates a command line parser for the specified arguments
-            list. The parameter should be the same as passes to 'main'.
+            list. The parameters should be the same as passed to 'main'.
         */
-        basic_command_line_parser(int argc, charT* argv[]);
+        basic_command_line_parser(int argc, const charT* const argv[]);
 
         /** Sets options descriptions to use. */
         basic_command_line_parser& options(const options_description& desc);
@@ -104,8 +134,26 @@ namespace boost { namespace program_options {
         basic_command_line_parser& style(int);
         /** Sets the extra parsers. */
         basic_command_line_parser& extra_parser(ext_parser);
-        
+
+        /** Parses the options and returns the result of parsing.
+            Throws on error.
+        */
         basic_parsed_options<charT> run();
+
+        /** Specifies that unregistered options are allowed and should
+            be passed though. For each command like token that looks
+            like an option but does not contain a recognized name, an
+            instance of basic_option<charT> will be added to result,
+            with 'unrecognized' field set to 'true'. It's possible to
+            collect all unrecognized options with the 'collect_unrecognized'
+            funciton. 
+        */
+        basic_command_line_parser& allow_unregistered();
+        
+        using detail::cmdline::style_parser;
+
+        basic_command_line_parser& extra_style_parser(style_parser s);
+
     private:
         const options_description* m_desc;
     };
@@ -118,7 +166,7 @@ namespace boost { namespace program_options {
      */
     template<class charT>
     basic_parsed_options<charT>
-    parse_command_line(int argc, charT* argv[],
+    parse_command_line(int argc, const charT* const argv[],
                        const options_description&,
                        int style = 0,
                        function1<std::pair<std::string, std::string>, 
@@ -126,13 +174,45 @@ namespace boost { namespace program_options {
                        = ext_parser());
 
     /** Parse a config file. 
+    
+        Read from given stream.
     */
     template<class charT>
 #if ! BOOST_WORKAROUND(__ICL, BOOST_TESTED_AT(700))
     BOOST_PROGRAM_OPTIONS_DECL
 #endif
     basic_parsed_options<charT>
-    parse_config_file(std::basic_istream<charT>&, const options_description&);
+    parse_config_file(std::basic_istream<charT>&, const options_description&,
+                      bool allow_unregistered = false);
+
+    /** Parse a config file. 
+    
+        Read from file with the given name. The character type is
+        passed to the file stream. 
+    */
+    template<class charT>
+#if ! BOOST_WORKAROUND(__ICL, BOOST_TESTED_AT(700))
+    BOOST_PROGRAM_OPTIONS_DECL
+#endif
+    basic_parsed_options<charT>
+    parse_config_file(const char* filename, const options_description&,
+                      bool allow_unregistered = false);
+
+    /** Controls if the 'collect_unregistered' function should
+        include positional options, or not. */
+    enum collect_unrecognized_mode 
+    { include_positional, exclude_positional };
+
+    /** Collects the original tokens for all named options with
+        'unregistered' flag set. If 'mode' is 'include_positional'
+        also collects all positional options.
+        Returns the vector of origianl tokens for all collected
+        options.
+    */
+    template<class charT>
+    std::vector< std::basic_string<charT> > 
+    collect_unrecognized(const std::vector< basic_option<charT> >& options,
+                         enum collect_unrecognized_mode mode);
 
     /** Parse environment. 
 
@@ -164,6 +244,24 @@ namespace boost { namespace program_options {
     BOOST_PROGRAM_OPTIONS_DECL parsed_options
     parse_environment(const options_description&, const char* prefix);
 
+    /** Splits a given string to a collection of single strings which
+        can be passed to command_line_parser. The second parameter is
+        used to specify a collection of possible seperator chars used
+        for splitting. The seperator is defaulted to space " ".
+        Splitting is done in a unix style way, with respect to quotes '"'
+        and escape characters '\'
+    */
+    BOOST_PROGRAM_OPTIONS_DECL std::vector<std::string>
+    split_unix(const std::string& cmdline, const std::string& seperator = " \t", 
+         const std::string& quote = "'\"", const std::string& escape = "\\");
+         
+#ifndef BOOST_NO_STD_WSTRING
+    /** @overload */
+    BOOST_PROGRAM_OPTIONS_DECL std::vector<std::wstring>
+    split_unix(const std::wstring& cmdline, const std::wstring& seperator = L" \t", 
+         const std::wstring& quote = L"'\"", const std::wstring& escape = L"\\");
+#endif
+
     #ifdef _WIN32
     /** Parses the char* string which is passed to WinMain function on
         windows. This function is provided for convenience, and because it's
@@ -180,8 +278,13 @@ namespace boost { namespace program_options {
     split_winmain(const std::wstring& cmdline);
     #endif
 #endif
+    
 
 }}
+
+#if defined(BOOST_MSVC)
+#   pragma warning (pop)
+#endif
 
 #undef DECL
 

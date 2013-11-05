@@ -4,9 +4,9 @@
 /* Copyright (c) 2004 CrystalClear Software, Inc.
  * Use, modification and distribution is subject to the
  * Boost Software License, Version 1.0. (See accompanying
- * file LICENSE-1.0 or http://www.boost.org/LICENSE-1.0)
+ * file LICENSE_1_0.txt or http://www.boost.org/LICENSE_1_0.txt)
  * Author: Jeff Garland
- * $Date: 2005/03/04 06:52:10 $
+ * $Date: 2013-06-21 08:04:12 -0700 (Fri, 21 Jun 2013) $
  */
 
 #include <sstream>
@@ -37,7 +37,7 @@ gather_month_strings(const std::locale& locale, bool short_strings=true)
   typedef std::vector<string_type> collection_type;
   typedef std::basic_ostringstream<charT> ostream_type;
   typedef std::ostreambuf_iterator<charT> ostream_iter_type;
-  typedef std::basic_stringstream<charT> stringstream_type;
+  typedef std::basic_ostringstream<charT> stringstream_type;
   typedef std::time_put<charT>           time_put_facet_type;
   charT short_fmt[3] = { '%', 'b' };
   charT long_fmt[3]  = { '%', 'B' };
@@ -49,15 +49,17 @@ gather_month_strings(const std::locale& locale, bool short_strings=true)
   {
     //grab the needed strings by using the locale to
     //output each month
+    const charT* p_outfmt = outfmt.c_str(), *p_outfmt_end = p_outfmt + outfmt.size();
+    tm tm_value;
+    memset(&tm_value, 0, sizeof(tm_value));
     for (int m=0; m < 12; m++) {
-      tm tm_value;
       tm_value.tm_mon = m;
       stringstream_type ss;
       ostream_iter_type oitr(ss);
       std::use_facet<time_put_facet_type>(locale).put(oitr, ss, ss.fill(),
                                                       &tm_value,
-                                                      &*outfmt.begin(),
-                                                      &*outfmt.begin()+outfmt.size());
+                                                      p_outfmt,
+                                                      p_outfmt_end);
       months.push_back(ss.str());
     }
   }
@@ -86,7 +88,7 @@ gather_weekday_strings(const std::locale& locale, bool short_strings=true)
   typedef std::vector<string_type> collection_type;
   typedef std::basic_ostringstream<charT> ostream_type;
   typedef std::ostreambuf_iterator<charT> ostream_iter_type;
-  typedef std::basic_stringstream<charT> stringstream_type;
+  typedef std::basic_ostringstream<charT> stringstream_type;
   typedef std::time_put<charT>           time_put_facet_type;
   charT short_fmt[3] = { '%', 'a' };
   charT long_fmt[3]  = { '%', 'A' };
@@ -101,15 +103,17 @@ gather_weekday_strings(const std::locale& locale, bool short_strings=true)
   {
     //grab the needed strings by using the locale to
     //output each month / weekday
+    const charT* p_outfmt = outfmt.c_str(), *p_outfmt_end = p_outfmt + outfmt.size();
+    tm tm_value;
+    memset(&tm_value, 0, sizeof(tm_value));
     for (int i=0; i < 7; i++) {
-      tm tm_value;
       tm_value.tm_wday = i;
       stringstream_type ss;
       ostream_iter_type oitr(ss);
       std::use_facet<time_put_facet_type>(locale).put(oitr, ss, ss.fill(),
                                                       &tm_value,
-                                                      &*outfmt.begin(),
-                                                      &*outfmt.begin()+outfmt.size());
+                                                      p_outfmt,
+                                                      p_outfmt_end);
 
       weekdays.push_back(ss.str());
     }

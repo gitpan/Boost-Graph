@@ -79,9 +79,11 @@ public:
   
   template <typename IndexList>
   const element& operator()(const IndexList& indices) const {
+    boost::function_requires<
+      CollectionConcept<IndexList> >();
     return super_type::access_element(boost::type<const element&>(),
-                                      origin(),
-                                      indices,strides());
+                                      indices,origin(),
+                                      shape(),strides(),index_bases());
   }
 
   // see generate_array_view in base.hpp
@@ -229,13 +231,13 @@ public:
   // Assignment from other ConstMultiArray types.
   template <typename ConstMultiArray>
   sub_array& operator=(const ConstMultiArray& other) {
-    function_requires< boost::detail::multi_array::ConstMultiArrayConcept< 
+    function_requires< boost::multi_array_concepts::ConstMultiArrayConcept< 
         ConstMultiArray, NumDims> >();
 
     // make sure the dimensions agree
-    assert(other.num_dimensions() == this->num_dimensions());
-    assert(std::equal(other.shape(),other.shape()+this->num_dimensions(),
-                      this->shape()));
+    BOOST_ASSERT(other.num_dimensions() == this->num_dimensions());
+    BOOST_ASSERT(std::equal(other.shape(),other.shape()+this->num_dimensions(),
+                            this->shape()));
     // iterator-based copy
     std::copy(other.begin(),other.end(),begin());
     return *this;
@@ -245,9 +247,10 @@ public:
   sub_array& operator=(const sub_array& other) {
     if (&other != this) {
       // make sure the dimensions agree
-      assert(other.num_dimensions() == this->num_dimensions());
-      assert(std::equal(other.shape(),other.shape()+this->num_dimensions(),
-                        this->shape()));
+      BOOST_ASSERT(other.num_dimensions() == this->num_dimensions());
+      BOOST_ASSERT(std::equal(other.shape(),
+                              other.shape()+this->num_dimensions(),
+                              this->shape()));
       // iterator-based copy
       std::copy(other.begin(),other.end(),begin());
     }
@@ -284,9 +287,12 @@ public:
 
   template <class IndexList>
   element& operator()(const IndexList& indices) {
+    boost::function_requires<
+      CollectionConcept<IndexList> >();
     return super_type::access_element(boost::type<element&>(),
-                                      origin(),
-                                      indices,this->strides());
+                                      indices,origin(),
+                                      this->shape(),this->strides(),
+                                      this->index_bases());
   }
 
   iterator begin() {
@@ -316,6 +322,8 @@ public:
 
   template <class IndexList>
   const element& operator()(const IndexList& indices) const {
+    boost::function_requires<
+      CollectionConcept<IndexList> >();
     return super_type::operator()(indices);
   }
 

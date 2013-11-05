@@ -23,8 +23,20 @@
 
 namespace boost{
 
+#ifdef BOOST_MSVC
+#pragma warning(push)
+#pragma warning(disable: 4103)
+#endif
 #ifdef BOOST_HAS_ABI_HEADERS
 #  include BOOST_ABI_PREFIX
+#endif
+#ifdef BOOST_MSVC
+#pragma warning(pop)
+#endif
+
+#ifdef BOOST_MSVC
+#  pragma warning(push)
+#  pragma warning(disable: 4800)
 #endif
 
 namespace re_detail{
@@ -95,7 +107,7 @@ std::size_t regex_split(OutputIterator out,
                    std::size_t max_split)
 {
    typedef typename std::basic_string<charT, Traits1, Alloc1>::const_iterator  ci_t;
-   typedef typename match_results<ci_t>::allocator_type                        match_allocator;
+   //typedef typename match_results<ci_t>::allocator_type                        match_allocator;
    ci_t last = s.begin();
    std::size_t init_size = max_split;
    re_detail::split_pred<OutputIterator, charT, Traits1, Alloc1> pred(&last, &out, &max_split);
@@ -138,8 +150,19 @@ inline std::size_t regex_split(OutputIterator out,
    return regex_split(out, s, re_detail::get_default_expression(charT(0)), match_default, UINT_MAX);
 }
 
+#ifdef BOOST_MSVC
+#  pragma warning(pop)
+#endif
+
+#ifdef BOOST_MSVC
+#pragma warning(push)
+#pragma warning(disable: 4103)
+#endif
 #ifdef BOOST_HAS_ABI_HEADERS
 #  include BOOST_ABI_SUFFIX
+#endif
+#ifdef BOOST_MSVC
+#pragma warning(pop)
 #endif
 
 } // namespace boost

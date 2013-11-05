@@ -20,27 +20,33 @@
 #ifndef BOOST_REGEX_V4_PERL_MATCHER_COMMON_HPP
 #define BOOST_REGEX_V4_PERL_MATCHER_COMMON_HPP
 
+#ifdef BOOST_MSVC
+#pragma warning(push)
+#pragma warning(disable: 4103)
+#endif
 #ifdef BOOST_HAS_ABI_HEADERS
 #  include BOOST_ABI_PREFIX
+#endif
+#ifdef BOOST_MSVC
+#pragma warning(pop)
 #endif
 
 #ifdef __BORLANDC__
 #  pragma option push -w-8008 -w-8066
+#endif
+#ifdef BOOST_MSVC
+#  pragma warning(push)
+#  pragma warning(disable: 4800)
 #endif
 
 namespace boost{
 namespace re_detail{
 
 template <class BidiIterator, class Allocator, class traits>
-perl_matcher<BidiIterator, Allocator, traits>::perl_matcher(BidiIterator first, BidiIterator end, 
-   match_results<BidiIterator, Allocator>& what, 
-   const basic_regex<char_type, traits>& e,
-   match_flag_type f)
-   :  m_result(what), base(first), last(end), 
-      position(first), re(e), traits_inst(e.get_traits()), 
-      m_independent(false), next_count(&rep_obj), rep_obj(&next_count)
+void perl_matcher<BidiIterator, Allocator, traits>::construct_init(const basic_regex<char_type, traits>& e, match_flag_type f)
 { 
    typedef typename regex_iterator_traits<BidiIterator>::iterator_category category;
+   typedef typename basic_regex<char_type, traits>::flag_type expression_flag_type;
    
    if(e.empty())
    {
@@ -50,13 +56,16 @@ perl_matcher<BidiIterator, Allocator, traits>::perl_matcher(BidiIterator first, 
    }
    pstate = 0;
    m_match_flags = f;
-   icase = re.flags() & regex_constants::icase;
    estimate_max_state_count(static_cast<category*>(0));
+   expression_flag_type re_f = re.flags();
+   icase = re_f & regex_constants::icase;
    if(!(m_match_flags & (match_perl|match_posix)))
    {
-      if((re.flags() & (regbase::main_option_type|regbase::no_perl_ex)) == 0)
+      if((re_f & (regbase::main_option_type|regbase::no_perl_ex)) == 0)
          m_match_flags |= match_perl;
-      else if((re.flags() & (regbase::main_option_type|regbase::emacs_ex)) == (regbase::basic_syntax_group|regbase::emacs_ex))
+      else if((re_f & (regbase::main_option_type|regbase::emacs_ex)) == (regbase::basic_syntax_group|regbase::emacs_ex))
+         m_match_flags |= match_perl;
+      else if((re_f & (regbase::main_option_type|regbase::literal)) == (regbase::literal))
          m_match_flags |= match_perl;
       else
          m_match_flags |= match_posix;
@@ -73,8 +82,7 @@ perl_matcher<BidiIterator, Allocator, traits>::perl_matcher(BidiIterator first, 
    m_backup_state = 0;
 #endif
    // find the value to use for matching word boundaries:
-   const char_type w = static_cast<char_type>('w');
-   m_word_mask = traits_inst.lookup_classname(&w, &w+1);
+   m_word_mask = re.get_data().m_word_mask; 
    // find bitmask to use for matching '.':
    match_any_mask = static_cast<unsigned char>((f & match_not_dot_newline) ? re_detail::test_not_newline : re_detail::test_newline);
 }
@@ -82,19 +90,71 @@ perl_matcher<BidiIterator, Allocator, traits>::perl_matcher(BidiIterator first, 
 template <class BidiIterator, class Allocator, class traits>
 void perl_matcher<BidiIterator, Allocator, traits>::estimate_max_state_count(std::random_access_iterator_tag*)
 {
-   static const difference_type k = 100000;
-   difference_type dist = boost::re_detail::distance(base, last);
-   traits_size_type states = static_cast<traits_size_type>(re.size());
+   //
+   // How many states should we allow our machine to visit before giving up?
+   // This is a heuristic: it takes the greater of O(N^2) and O(NS^2)
+   // where N is the length of the string, and S is the number of states
+   // in the machine.  It's tempting to up this to O(N^2S) or even O(N^2S^2)
+   // but these take unreasonably amounts of time to bale out in pathological
+   // cases.
+   //
+   // Calculate NS^2 first:
+   //
+   static const std::ptrdiff_t k = 100000;
+   std::ptrdiff_t dist = boost::re_detail::distance(base, last);
+   if(dist == 0)
+      dist = 1;
+   std::ptrdiff_t states = re.size();
+   if(states == 0)
+      states = 1;
    states *= states;
-   difference_type lim = ((std::numeric_limits<difference_type>::max)() - k) / states;
-   if(dist >= lim)
-      max_state_count = (std::numeric_limits<difference_type>::max)();
-   else
-      max_state_count = k + states * dist;
+   if((std::numeric_limits<std::ptrdiff_t>::max)() / dist < states)
+   {
+      max_state_count = (std::min)((std::ptrdiff_t)BOOST_REGEX_MAX_STATE_COUNT, (std::numeric_limits<std::ptrdiff_t>::max)() - 2);
+      return;
+   }
+   states *= dist;
+   if((std::numeric_limits<std::ptrdiff_t>::max)() - k < states)
+   {
+      max_state_count = (std::min)((std::ptrdiff_t)BOOST_REGEX_MAX_STATE_COUNT, (std::numeric_limits<std::ptrdiff_t>::max)() - 2);
+      return;
+   }
+   states += k;
+
+   max_state_count = states;
+
+   //
+   // Now calculate N^2:
+   //
+   states = dist;
+   if((std::numeric_limits<std::ptrdiff_t>::max)() / dist < states)
+   {
+      max_state_count = (std::min)((std::ptrdiff_t)BOOST_REGEX_MAX_STATE_COUNT, (std::numeric_limits<std::ptrdiff_t>::max)() - 2);
+      return;
+   }
+   states *= dist;
+   if((std::numeric_limits<std::ptrdiff_t>::max)() - k < states)
+   {
+      max_state_count = (std::min)((std::ptrdiff_t)BOOST_REGEX_MAX_STATE_COUNT, (std::numeric_limits<std::ptrdiff_t>::max)() - 2);
+      return;
+   }
+   states += k;
+   //
+   // N^2 can be a very large number indeed, to prevent things getting out
+   // of control, cap the max states:
+   //
+   if(states > BOOST_REGEX_MAX_STATE_COUNT)
+      states = BOOST_REGEX_MAX_STATE_COUNT;
+   //
+   // If (the possibly capped) N^2 is larger than our first estimate,
+   // use this instead:
+   //
+   if(states > max_state_count)
+      max_state_count = states;
 }
 
 template <class BidiIterator, class Allocator, class traits>
-void perl_matcher<BidiIterator, Allocator, traits>::estimate_max_state_count(void*)
+inline void perl_matcher<BidiIterator, Allocator, traits>::estimate_max_state_count(void*)
 {
    // we don't know how long the sequence is:
    max_state_count = BOOST_REGEX_MAX_STATE_COUNT;
@@ -102,21 +162,9 @@ void perl_matcher<BidiIterator, Allocator, traits>::estimate_max_state_count(voi
 
 #ifdef BOOST_REGEX_HAS_MS_STACK_GUARD
 template <class BidiIterator, class Allocator, class traits>
-bool perl_matcher<BidiIterator, Allocator, traits>::protected_call(
+inline bool perl_matcher<BidiIterator, Allocator, traits>::protected_call(
    protected_proc_type proc)
 {
-   /*
-   __try{
-      return (this->*proc)();
-   }__except(EXCEPTION_STACK_OVERFLOW == GetExceptionCode())
-   {
-      reset_stack_guard_page();
-   }
-   // we only get here after a stack overflow:
-   raise_error<traits>(traits_inst, regex_constants::error_size);
-   // and we never really get here at all:
-   return false;
-   */
    ::boost::re_detail::concrete_protected_call
       <perl_matcher<BidiIterator, Allocator, traits> >
       obj(this, proc);
@@ -126,7 +174,7 @@ bool perl_matcher<BidiIterator, Allocator, traits>::protected_call(
 #endif
 
 template <class BidiIterator, class Allocator, class traits>
-bool perl_matcher<BidiIterator, Allocator, traits>::match()
+inline bool perl_matcher<BidiIterator, Allocator, traits>::match()
 {
 #ifdef BOOST_REGEX_HAS_MS_STACK_GUARD
    return protected_call(&perl_matcher<BidiIterator, Allocator, traits>::match_imp);
@@ -152,14 +200,15 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_imp()
    search_base = base;
    state_count = 0;
    m_match_flags |= regex_constants::match_all;
-   m_presult->set_size((m_match_flags & match_nosubs) ? 1 : re.mark_count(), base, last);
+   m_presult->set_size((m_match_flags & match_nosubs) ? 1 : re.mark_count(), search_base, last);
    m_presult->set_base(base);
+   m_presult->set_named_subs(this->re.get_named_subs());
    if(m_match_flags & match_posix)
       m_result = *m_presult;
    verify_options(re.flags(), m_match_flags);
    if(0 == match_prefix())
       return false;
-   return m_result[0].second == last;
+   return (m_result[0].second == last) && (m_result[0].first == base);
 
 #if defined(BOOST_REGEX_NON_RECURSIVE) && !defined(BOOST_NO_EXCEPTIONS)
    }
@@ -175,7 +224,7 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_imp()
 }
 
 template <class BidiIterator, class Allocator, class traits>
-bool perl_matcher<BidiIterator, Allocator, traits>::find()
+inline bool perl_matcher<BidiIterator, Allocator, traits>::find()
 {
 #ifdef BOOST_REGEX_HAS_MS_STACK_GUARD
    return protected_call(&perl_matcher<BidiIterator, Allocator, traits>::find_imp);
@@ -211,11 +260,11 @@ bool perl_matcher<BidiIterator, Allocator, traits>::find_imp()
    if((m_match_flags & regex_constants::match_init) == 0)
    {
       // reset our state machine:
-      position = base;
-      search_base = base;
+      search_base = position = base;
       pstate = re.get_first_state();
       m_presult->set_size((m_match_flags & match_nosubs) ? 1 : re.mark_count(), base, last);
       m_presult->set_base(base);
+      m_presult->set_named_subs(this->re.get_named_subs());
       m_match_flags |= regex_constants::match_init;
    }
    else
@@ -233,8 +282,8 @@ bool perl_matcher<BidiIterator, Allocator, traits>::find_imp()
       }
       // reset $` start:
       m_presult->set_size((m_match_flags & match_nosubs) ? 1 : re.mark_count(), search_base, last);
-      if(base != search_base)
-         m_match_flags |= match_prev_avail;
+      //if((base != search_base) && (base == backstop))
+      //   m_match_flags |= match_prev_avail;
    }
    if(m_match_flags & match_posix)
    {
@@ -279,6 +328,10 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_prefix()
       m_has_found_match = true;
       m_presult->set_second(last, 0, false);
       position = last;
+      if((m_match_flags & match_posix) == match_posix)
+      {
+         m_result.maybe_assign(*m_presult);
+      }
    }
 #ifdef BOOST_REGEX_MATCH_EXTRA
    if(m_has_found_match && (match_extra & m_match_flags))
@@ -296,25 +349,6 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_prefix()
    if(!m_has_found_match)
       position = restart; // reset search postion
    return m_has_found_match;
-}
-
-template <class BidiIterator, class Allocator, class traits>
-bool perl_matcher<BidiIterator, Allocator, traits>::match_endmark()
-{
-   int index = static_cast<const re_brace*>(pstate)->index;
-   if(index > 0)
-   {
-      if((m_match_flags & match_nosubs) == 0)
-         m_presult->set_second(position, index);
-   }
-   else if((index < 0) && (index != -4))
-   {
-      // matched forward lookahead:
-      pstate = 0;
-      return true;
-   }
-   pstate = pstate->next.p;
-   return true;
 }
 
 template <class BidiIterator, class Allocator, class traits>
@@ -337,7 +371,7 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_literal()
 template <class BidiIterator, class Allocator, class traits>
 bool perl_matcher<BidiIterator, Allocator, traits>::match_start_line()
 {
-   if(position == base)
+   if(position == backstop)
    {
       if((m_match_flags & match_prev_avail) == 0)
       {
@@ -381,7 +415,7 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_end_line()
       // we're not yet at the end so *first is always valid:
       if(is_separator(*position))
       {
-         if((position != base) || (m_match_flags & match_prev_avail))
+         if((position != backstop) || (m_match_flags & match_prev_avail))
          {
             // check that we're not in the middle of \r\n sequence
             BidiIterator t(position);
@@ -418,35 +452,6 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_wild()
 }
 
 template <class BidiIterator, class Allocator, class traits>
-bool perl_matcher<BidiIterator, Allocator, traits>::match_match()
-{
-   if((m_match_flags & match_not_null) && (position == (*m_presult)[0].first))
-      return false;
-   if((m_match_flags & match_all) && (position != last))
-      return false;
-   if((m_match_flags & regex_constants::match_not_initial_null) && (position == search_base))
-      return false;
-   m_presult->set_second(position);
-   pstate = 0;
-   m_has_found_match = true;
-   if((m_match_flags & match_posix) == match_posix)
-   {
-      m_result.maybe_assign(*m_presult);
-      if((m_match_flags & match_any) == 0)
-         return false;
-   }
-#ifdef BOOST_REGEX_MATCH_EXTRA
-   if(match_extra & m_match_flags)
-   {
-      for(unsigned i = 0; i < m_presult->size(); ++i)
-         if((*m_presult)[i].matched)
-            ((*m_presult)[i]).get_captures().push_back((*m_presult)[i]);
-   }
-#endif
-   return true;
-}
-
-template <class BidiIterator, class Allocator, class traits>
 bool perl_matcher<BidiIterator, Allocator, traits>::match_word_boundary()
 {
    bool b; // indcates whether next character is a word character
@@ -463,7 +468,7 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_word_boundary()
    {
       b = (m_match_flags & match_not_eow) ? true : false;
    }
-   if((position == base)  && ((m_match_flags & match_prev_avail) == 0))
+   if((position == backstop) && ((m_match_flags & match_prev_avail) == 0))
    {
       if(m_match_flags & match_not_bow)
          b ^= true;
@@ -490,10 +495,10 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_within_word()
    if(position == last)
       return false;
    // both prev and this character must be m_word_mask:
-   if(traits_inst.isctype(*position, m_word_mask))
+   bool prev = traits_inst.isctype(*position, m_word_mask);
    {
       bool b;
-      if((position == base) && ((m_match_flags & match_prev_avail) == 0))
+      if((position == backstop) && ((m_match_flags & match_prev_avail) == 0)) 
          return false;
       else
       {
@@ -501,7 +506,7 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_within_word()
          b = traits_inst.isctype(*position, m_word_mask);
          ++position;
       }
-      if(b)
+      if(b == prev)
       {
          pstate = pstate->next.p;
          return true;
@@ -517,7 +522,7 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_word_start()
       return false; // can't be starting a word if we're already at the end of input
    if(!traits_inst.isctype(*position, m_word_mask))
       return false; // next character isn't a word character
-   if((position == base) && ((m_match_flags & match_prev_avail) == 0))
+   if((position == backstop) && ((m_match_flags & match_prev_avail) == 0))
    {
       if(m_match_flags & match_not_bow)
          return false; // no previous input
@@ -538,7 +543,7 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_word_start()
 template <class BidiIterator, class Allocator, class traits>
 bool perl_matcher<BidiIterator, Allocator, traits>::match_word_end()
 {
-   if((position == base) && ((m_match_flags & match_prev_avail) == 0))
+   if((position == backstop) && ((m_match_flags & match_prev_avail) == 0))
       return false;  // start of buffer can't be end of word
    BidiIterator t(position);
    --t;
@@ -563,7 +568,7 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_word_end()
 template <class BidiIterator, class Allocator, class traits>
 bool perl_matcher<BidiIterator, Allocator, traits>::match_buffer_start()
 {
-   if((position != base) || (m_match_flags & match_not_bob))
+   if((position != backstop) || (m_match_flags & match_not_bob))
       return false;
    // OK match:
    pstate = pstate->next.p;
@@ -583,9 +588,29 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_buffer_end()
 template <class BidiIterator, class Allocator, class traits>
 bool perl_matcher<BidiIterator, Allocator, traits>::match_backref()
 {
-   // compare with what we previously matched:
-   BidiIterator i = (*m_presult)[static_cast<const re_brace*>(pstate)->index].first;
-   BidiIterator j = (*m_presult)[static_cast<const re_brace*>(pstate)->index].second;
+   //
+   // Compare with what we previously matched.
+   // Note that this succeeds if the backref did not partisipate
+   // in the match, this is in line with ECMAScript, but not Perl
+   // or PCRE.
+   //
+   int index = static_cast<const re_brace*>(pstate)->index;
+   if(index >= 10000)
+   {
+      named_subexpressions::range_type r = re.get_data().equal_range(index);
+      BOOST_ASSERT(r.first != r.second);
+      do
+      {
+         index = r.first->index;
+         ++r.first;
+      }while((r.first != r.second) && ((*m_presult)[index].matched != true));
+   }
+
+   if((m_match_flags & match_perl) && !(*m_presult)[index].matched)
+      return false;
+
+   BidiIterator i = (*m_presult)[index].first;
+   BidiIterator j = (*m_presult)[index].second;
    while(i != j)
    {
       if((position == last) || (traits_inst.translate(*position, icase) != traits_inst.translate(*i, icase)))
@@ -676,20 +701,90 @@ bool perl_matcher<BidiIterator, Allocator, traits>::match_restart_continue()
 template <class BidiIterator, class Allocator, class traits>
 bool perl_matcher<BidiIterator, Allocator, traits>::match_backstep()
 {
-   std::ptrdiff_t maxlen = ::boost::re_detail::distance(search_base, position);
-   if(maxlen < static_cast<const re_brace*>(pstate)->index)
-      return false;
-   std::advance(position, -static_cast<const re_brace*>(pstate)->index);
+#ifdef BOOST_MSVC
+#pragma warning(push)
+#pragma warning(disable:4127)
+#endif
+   if( ::boost::is_random_access_iterator<BidiIterator>::value)
+   {
+      std::ptrdiff_t maxlen = ::boost::re_detail::distance(backstop, position);
+      if(maxlen < static_cast<const re_brace*>(pstate)->index)
+         return false;
+      std::advance(position, -static_cast<const re_brace*>(pstate)->index);
+   }
+   else
+   {
+      int c = static_cast<const re_brace*>(pstate)->index;
+      while(c--)
+      {
+         if(position == backstop)
+            return false;
+         --position;
+      }
+   }
    pstate = pstate->next.p;
    return true;
+#ifdef BOOST_MSVC
+#pragma warning(pop)
+#endif
 }
 
 template <class BidiIterator, class Allocator, class traits>
 inline bool perl_matcher<BidiIterator, Allocator, traits>::match_assert_backref()
 {
    // return true if marked sub-expression N has been matched:
-   bool result = (*m_presult)[static_cast<const re_brace*>(pstate)->index].matched;
-   pstate = pstate->next.p;
+   int index = static_cast<const re_brace*>(pstate)->index;
+   bool result = false;
+   if(index == 9999)
+   {
+      // Magic value for a (DEFINE) block:
+      return false;
+   }
+   else if(index > 0)
+   {
+      // Have we matched subexpression "index"?
+      // Check if index is a hash value:
+      if(index >= 10000)
+      {
+         named_subexpressions::range_type r = re.get_data().equal_range(index);
+         while(r.first != r.second)
+         {
+            if((*m_presult)[r.first->index].matched)
+            {
+               result = true;
+               break;
+            }
+            ++r.first;
+         }
+      }
+      else
+      {
+         result = (*m_presult)[index].matched;
+      }
+      pstate = pstate->next.p;
+   }
+   else
+   {
+      // Have we recursed into subexpression "index"?
+      // If index == 0 then check for any recursion at all, otherwise for recursion to -index-1.
+      int idx = -index-1;
+      if(idx >= 10000)
+      {
+         named_subexpressions::range_type r = re.get_data().equal_range(idx);
+         int stack_index = recursion_stack.empty() ? -1 : recursion_stack.back().idx;
+         while(r.first != r.second)
+         {
+            result |= (stack_index == r.first->index);
+            if(result)break;
+            ++r.first;
+         }
+      }
+      else
+      {
+         result = !recursion_stack.empty() && ((recursion_stack.back().idx == idx) || (index == 0));
+      }
+      pstate = pstate->next.p;
+   }
    return result;
 }
 
@@ -879,11 +974,22 @@ bool perl_matcher<BidiIterator, Allocator, traits>::find_restart_lit()
 
 } // namespace boost
 
+#ifdef BOOST_MSVC
+#  pragma warning(pop)
+#endif
+
 #ifdef __BORLANDC__
 #  pragma option pop
 #endif
+#ifdef BOOST_MSVC
+#pragma warning(push)
+#pragma warning(disable: 4103)
+#endif
 #ifdef BOOST_HAS_ABI_HEADERS
 #  include BOOST_ABI_SUFFIX
+#endif
+#ifdef BOOST_MSVC
+#pragma warning(pop)
 #endif
 
 #endif

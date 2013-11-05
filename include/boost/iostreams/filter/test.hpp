@@ -1,4 +1,5 @@
-// (C) Copyright Jonathan Turkanis 2005.
+// (C) Copyright 2008 CodeRage, LLC (turkanis at coderage dot com)
+// (C) Copyright 2005-2007 Jonathan Turkanis
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt.)
 
@@ -34,7 +35,6 @@
 #include <boost/iostreams/categories.hpp>
 #include <boost/iostreams/compose.hpp>
 #include <boost/iostreams/copy.hpp>
-#include <boost/iostreams/detail/adapter/basic_adapter.hpp>
 #include <boost/iostreams/detail/bool_trait_def.hpp>
 #include <boost/iostreams/detail/ios.hpp>
 #include <boost/iostreams/device/array.hpp>
@@ -134,6 +134,7 @@ public:
         return amt;
     }
 private:
+    non_blocking_sink& operator=(const non_blocking_sink&);
     std::string&     dest_;
     std::streamsize  inc_;
 };
@@ -238,16 +239,60 @@ bool test_filter_pair( OutputFilter out,
           inc <= default_increment * 40; 
           inc += default_increment )
     {
-        array_source  src(data.data(), data.data() + data.size());
-        std::string   temp;
-        std::string   dest;
-        iostreams::copy(src, compose(out, non_blocking_sink(temp, inc)));
-        iostreams::copy( 
-            compose(in, non_blocking_source(temp, inc)),
-            iostreams::back_inserter(dest)
-        );
-        if (dest != data)
-            return false;
+        {
+            array_source  src(data.data(), data.data() + data.size());
+            std::string   temp;
+            std::string   dest;
+            iostreams::copy(src, compose(out, non_blocking_sink(temp, inc)));
+            iostreams::copy( 
+                compose(in, non_blocking_source(temp, inc)),
+                iostreams::back_inserter(dest)
+            );
+            if (dest != data)
+                return false;
+        }
+        {
+            array_source  src(data.data(), data.data() + data.size());
+            std::string   temp;
+            std::string   dest;
+            iostreams::copy(src, compose(out, non_blocking_sink(temp, inc)));
+            // truncate the file, this should not loop, it may throw
+            // std::ios_base::failure, which we swallow.
+            try {
+                temp.resize(temp.size() / 2);
+                iostreams::copy( 
+                    compose(in, non_blocking_source(temp, inc)),
+                    iostreams::back_inserter(dest)
+                );
+            } catch(std::ios_base::failure&) {}
+        }
+        {
+            array_source  src(data.data(), data.data() + data.size());
+            std::string   temp;
+            std::string   dest;
+            iostreams::copy(compose(out, src), non_blocking_sink(temp, inc));
+            iostreams::copy( 
+                non_blocking_source(temp, inc),
+                compose(in, iostreams::back_inserter(dest))
+            );
+            if (dest != data)
+                return false;
+        }
+        {
+            array_source  src(data.data(), data.data() + data.size());
+            std::string   temp;
+            std::string   dest;
+            iostreams::copy(compose(out, src), non_blocking_sink(temp, inc));
+            // truncate the file, this should not loop, it may throw
+            // std::ios_base::failure, which we swallow.
+            try {
+                temp.resize(temp.size() / 2);
+                iostreams::copy( 
+                    non_blocking_source(temp, inc),
+                    compose(in, iostreams::back_inserter(dest))
+                );
+            } catch(std::ios_base::failure&) {}
+        }
     }
     return true;
 }

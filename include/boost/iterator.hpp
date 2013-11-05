@@ -1,4 +1,4 @@
-//  interator.hpp workarounds for non-conforming standard libraries  ---------//
+//  iterator.hpp workarounds for non-conforming standard libraries  ---------//
 
 //  (C) Copyright Beman Dawes 2000. Distributed under the Boost
 //  Software License, Version 1.0. (See accompanying file
@@ -52,7 +52,7 @@ namespace boost
 
   template <class Category, class T, class Distance = std::ptrdiff_t,
             class Pointer = T*, class Reference = T&>
-   struct iterator : detail::iterator_base<Category, T, Distance, Pointer, Reference> {};
+  struct iterator : boost::detail::iterator_base<Category, T, Distance, Pointer, Reference> {};
 # endif
 } // namespace boost
 

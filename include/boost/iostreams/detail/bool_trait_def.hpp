@@ -1,4 +1,5 @@
-// (C) Copyright Jonathan Turkanis 2003.
+// (C) Copyright 2008 CodeRage, LLC (turkanis at coderage dot com)
+// (C) Copyright 2003-2007 Jonathan Turkanis
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt.)
 
@@ -20,6 +21,11 @@
 // Description: Used to generate the traits classes is_istream, is_ostream,
 //      etc.
 //
+#if BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x582))
+# define BOOST_IOSTREAMS_TRAIT_NAMESPACE(trait)
+#else
+# define BOOST_IOSTREAMS_TRAIT_NAMESPACE(trait) BOOST_PP_CAT(trait, _impl_):: 
+#endif
 #define BOOST_IOSTREAMS_BOOL_TRAIT_DEF(trait, type, arity) \
     namespace BOOST_PP_CAT(trait, _impl_) { \
       BOOST_IOSTREAMS_TEMPLATE_PARAMS(arity, T) \
@@ -29,7 +35,8 @@
       template<typename T> \
       struct impl { \
            BOOST_STATIC_CONSTANT(bool, value = \
-               (sizeof(helper(static_cast<T*>(0))) == \
+           (sizeof(BOOST_IOSTREAMS_TRAIT_NAMESPACE(trait) \
+              helper(static_cast<T*>(0))) == \
                 sizeof(type_traits::yes_type))); \
       }; \
     } \

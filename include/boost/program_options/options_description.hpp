@@ -25,6 +25,12 @@
 
 #include <iosfwd>
 
+#if defined(BOOST_MSVC)
+#   pragma warning (push)
+#   pragma warning (disable:4251) // class 'boost::shared_ptr<T>' needs to have dll-interface to be used by clients of class 'boost::program_options::option_description'
+#endif
+
+
 /** Boost namespace */
 namespace boost { 
 /** Namespace for the library. */
@@ -65,7 +71,7 @@ namespace program_options {
             The 'name' parameter is interpreted by the following rules:
             - if there's no "," character in 'name', it specifies long name
             - otherwise, the part before "," specifies long name and the part
-            after -- long name.
+            after -- short name.
         */
         option_description(const char* name,
                            const value_semantic* s);
@@ -78,12 +84,15 @@ namespace program_options {
 
         virtual ~option_description();
 
-        /** Given 'option', specified in the input source,
-            return 'true' is 'option' specifies *this.
-        */
-        bool match(const std::string& option, bool approx) const;
+        enum match_result { no_match, full_match, approximate_match };
 
-        /** Return the key that should identify the option, in
+        /** Given 'option', specified in the input source,
+            returns 'true' if 'option' specifies *this.
+        */
+        match_result match(const std::string& option, bool approx,
+                           bool long_ignore_case, bool short_ignore_case) const;
+
+        /** Returns the key that should identify the option, in
             particular in the variables_map class.
             The 'option' parameter is the option spelling from the
             input source.
@@ -92,6 +101,16 @@ namespace program_options {
             it's a short name with prepended '-'.
         */
         const std::string& key(const std::string& option) const;
+
+
+        /** Returns the canonical name for the option description to enable the user to
+            recognised a matching option.
+            1) For short options ('-', '/'), returns the short name prefixed.
+            2) For long options ('--' / '-') returns the long name prefixed
+            3) All other cases, returns the long name (if present) or the short name,
+                unprefixed.
+        */
+        std::string canonical_display_name(int canonical_option_style = 0) const;
 
         const std::string& long_name() const;
 
@@ -104,7 +123,7 @@ namespace program_options {
         /// Returns the option name, formatted suitably for usage message. 
         std::string format_name() const;
 
-        /** Return the parameter name and properties, formatted suitably for
+        /** Returns the parameter name and properties, formatted suitably for
             usage message. */
         std::string format_parameter() const;
 
@@ -153,15 +172,21 @@ namespace program_options {
     */
     class BOOST_PROGRAM_OPTIONS_DECL options_description {
     public:
-        static const unsigned m_default_line_length = 80;
+        static const unsigned m_default_line_length;
         
         /** Creates the instance. */
-        options_description(unsigned line_length = m_default_line_length);
+        options_description(unsigned line_length = m_default_line_length,
+                            unsigned min_description_length = m_default_line_length / 2);
         /** Creates the instance. The 'caption' parameter gives the name of
             this 'options_description' instance. Primarily useful for output.
+            The 'description_length' specifies the number of columns that
+            should be reserved for the description text; if the option text
+            encroaches into this, then the description will start on the next
+            line.
         */
         options_description(const std::string& caption,
-                            unsigned line_length = m_default_line_length);
+                            unsigned line_length = m_default_line_length,
+                            unsigned min_description_length = m_default_line_length / 2);
         /** Adds new variable description. Throws duplicate_variable_error if
             either short or long name matches that of already present one. 
         */
@@ -183,11 +208,15 @@ namespace program_options {
         */
         options_description_easy_init add_options();
 
-        const option_description& find(const std::string& name, bool approx) 
-            const;
+        const option_description& find(const std::string& name, 
+                                       bool approx, 
+                                       bool long_ignore_case = false,
+                                       bool short_ignore_case = false) const;
 
         const option_description* find_nothrow(const std::string& name, 
-                                               bool approx) const;
+                                               bool approx,
+                                               bool long_ignore_case = false,
+                                               bool short_ignore_case = false) const;
 
 
         const std::vector< shared_ptr<option_description> >& options() const;
@@ -198,7 +227,7 @@ namespace program_options {
         friend BOOST_PROGRAM_OPTIONS_DECL std::ostream& operator<<(std::ostream& os, 
                                              const options_description& desc);
 
-        /** Output 'desc' to the specified stream, calling 'f' to output each
+        /** Outputs 'desc' to the specified stream, calling 'f' to output each
             option_description element. */
         void print(std::ostream& os) const;
 
@@ -211,6 +240,8 @@ namespace program_options {
 
         std::string m_caption;
         const unsigned m_line_length;
+        const unsigned m_min_description_length;
+        
         // Data organization is chosen because:
         // - there could be two names for one option
         // - option_add_proxy needs to know the last added option
@@ -232,8 +263,12 @@ namespace program_options {
     /** Class thrown when duplicate option description is found. */
     class BOOST_PROGRAM_OPTIONS_DECL duplicate_option_error : public error {
     public:
-        duplicate_option_error(const std::string& what) : error(what) {}
+        duplicate_option_error(const std::string& xwhat) : error(xwhat) {}
     };
 }}
+
+#if defined(BOOST_MSVC)
+#   pragma warning (pop)
+#endif
 
 #endif

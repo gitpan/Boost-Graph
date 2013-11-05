@@ -1,14 +1,10 @@
 //
-//  Copyright (c) 2000-2002
-//  Joerg Walter, Mathias Koch
+//  Copyright (c) 2000-2010
+//  Joerg Walter, Mathias Koch, David Bellot
 //
-//  Permission to use, copy, modify, distribute and sell this software
-//  and its documentation for any purpose is hereby granted without fee,
-//  provided that the above copyright notice appear in all copies and
-//  that both that copyright notice and this permission notice appear
-//  in supporting documentation.  The authors make no representations
-//  about the suitability of this software for any purpose.
-//  It is provided "as is" without express or implied warranty.
+//  Distributed under the Boost Software License, Version 1.0. (See
+//  accompanying file LICENSE_1_0.txt or copy at
+//  http://www.boost.org/LICENSE_1_0.txt)
 //
 //  The authors gratefully acknowledge the support of
 //  GeNeSys mbH & Co. KG in producing this work.
@@ -18,6 +14,7 @@
 #define BOOST_UBLAS_HERMITIAN_H
 
 #include <boost/numeric/ublas/matrix.hpp>
+#include <boost/numeric/ublas/triangular.hpp>  // for resize_preserve
 #include <boost/numeric/ublas/detail/temporary.hpp>
 
 // Iterators based on ideas of Jeremy Siek
@@ -58,9 +55,6 @@ namespace boost { namespace numeric { namespace ublas {
         BOOST_UBLAS_INLINE
         hermitian_matrix_element (matrix_type &m, size_type i, size_type j, value_type d):
             container_reference<matrix_type> (m), i_ (i), j_ (j), d_ (d), dirty_ (false) {}
-        BOOST_UBLAS_INLINE
-        hermitian_matrix_element (const hermitian_matrix_element &p):
-            container_reference<matrix_type> (p), i_ (p.i_), d_ (p.d_), dirty_ (p.dirty_) {}
         BOOST_UBLAS_INLINE
         ~hermitian_matrix_element () {
             if (dirty_)
@@ -181,13 +175,13 @@ namespace boost { namespace numeric { namespace ublas {
 
         static
         BOOST_UBLAS_INLINE
-        real_type abs (const_reference t) {
-            return type_traits<element_type>::abs (t);
+        real_type type_abs (const_reference t) {
+            return type_traits<element_type>::type_abs (t);
         }
         static
         BOOST_UBLAS_INLINE
-        value_type sqrt (const_reference t) {
-            return type_traits<element_type>::sqrt (t);
+        value_type type_sqrt (const_reference t) {
+            return type_traits<element_type>::type_sqrt (t);
         }
 
         static
@@ -228,8 +222,24 @@ namespace boost { namespace numeric { namespace ublas {
     };
 
 #endif
-
-    // Array based hermitian matrix class
+    /** \brief A hermitian matrix of values of type \c T
+     *
+     * For a \f$(n \times n)\f$-dimensional matrix and \f$ 0 \leq i < n, 0 \leq j < n\f$, every element 
+     * \f$m_{i,j}\f$ is mapped to the \f$(i.n + j)\f$-th element of the container for row major orientation 
+     * or the \f$(i + j.m)\f$-th element of the container for column major orientation. And 
+     * \f$\forall i,j\f$, \f$m_{i,j} = \overline{m_{i,j}}\f$.
+     *
+     * Orientation and storage can also be specified, otherwise a row major and unbounded array are used. 
+     * It is \b not required by the storage to initialize elements of the matrix. 
+     * Moreover, only the given triangular matrix is stored and the storage of hermitian matrices is packed.
+     *
+     * See http://en.wikipedia.org/wiki/Hermitian_matrix for more details on hermitian matrices.
+     *
+     * \tparam T the type of object stored in the matrix (like double, float, complex, etc...)
+     * \tparam TRI the type of triangular matrix is either \c lower or \c upper. Default is \c lower
+     * \tparam L the storage organization. It is either \c row_major or \c column_major. Default is \c row_major
+     * \tparam A the type of Storage array. Default is \unbounded_array.
+     */
     template<class T, class TRI, class L, class A>
     class hermitian_matrix:
         public matrix_container<hermitian_matrix<T, TRI, L, A> > {
@@ -320,7 +330,7 @@ namespace boost { namespace numeric { namespace ublas {
         void resize (size_type size, bool preserve = true) {
             if (preserve) {
                 self_type temporary (size, size);
-                detail::matrix_resize_preserve<layout_type> (*this, temporary);
+                detail::matrix_resize_preserve<layout_type, triangular_type> (*this, temporary);
             }
             else {
                 data ().resize (triangular_type::packed_size (layout_type (), size, size));
@@ -360,13 +370,11 @@ namespace boost { namespace numeric { namespace ublas {
         BOOST_UBLAS_INLINE
         reference operator () (size_type i, size_type j) {
 #ifndef BOOST_UBLAS_STRICT_HERMITIAN
-            if (triangular_type::other (i, j))
-                return at_element (i, j);
-            else {
-                external_logic ().raise ();
-                // arbitary return value
-                return data () [triangular_type::element (layout_type (), j, size_, i, size_)];
+            if (!triangular_type::other (i, j)) {
+                bad_index ().raise ();
+                // NEVER reached
             }
+            return at_element (i, j);
 #else
         if (triangular_type::other (i, j))
             return reference (*this, i, j, data () [triangular_type::element (layout_type (), i, size_, j, size_)]);
@@ -506,7 +514,9 @@ namespace boost { namespace numeric { namespace ublas {
         BOOST_UBLAS_INLINE
         iterator1 find1 (int rank, size_type i, size_type j) {
             if (rank == 1)
-                i = triangular_type::mutable_restrict1 (i, j);
+                i = triangular_type::mutable_restrict1 (i, j, size1(), size2());
+            if (rank == 0)
+                i = triangular_type::global_mutable_restrict1 (i, size1(), j, size2());
             return iterator1 (*this, i, j);
         }
         BOOST_UBLAS_INLINE
@@ -516,7 +526,9 @@ namespace boost { namespace numeric { namespace ublas {
         BOOST_UBLAS_INLINE
         iterator2 find2 (int rank, size_type i, size_type j) {
             if (rank == 1)
-                j = triangular_type::mutable_restrict2 (i, j);
+                j = triangular_type::mutable_restrict2 (i, j, size1(), size2());
+            if (rank == 0)
+                j = triangular_type::global_mutable_restrict2 (i, size1(), j, size2());
             return iterator2 (*this, i, j);
         }
 
@@ -579,6 +591,10 @@ namespace boost { namespace numeric { namespace ublas {
             BOOST_UBLAS_INLINE
             const_reference operator * () const {
                 return (*this) () (it1_, it2_);
+            }
+            BOOST_UBLAS_INLINE
+            const_reference operator [] (difference_type n) const {
+                return *(*this + n);
             }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
@@ -714,6 +730,10 @@ namespace boost { namespace numeric { namespace ublas {
             BOOST_UBLAS_INLINE
             reference operator * () const {
                 return (*this) ().at_element (it1_, it2_);
+            }
+            BOOST_UBLAS_INLINE
+            reference operator [] (difference_type n) const {
+                return *(*this + n);
             }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
@@ -855,6 +875,10 @@ namespace boost { namespace numeric { namespace ublas {
             const_reference operator * () const {
                 return (*this) () (it1_, it2_);
             }
+            BOOST_UBLAS_INLINE
+            const_reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -990,6 +1014,10 @@ namespace boost { namespace numeric { namespace ublas {
             reference operator * () const {
                 return (*this) ().at_element (it1_, it2_);
             }
+            BOOST_UBLAS_INLINE
+            reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -1115,8 +1143,15 @@ namespace boost { namespace numeric { namespace ublas {
         array_type data_;
     };
 
-
-    // Hermitian matrix adaptor class
+    /** \brief A Hermitian matrix adaptator: convert a any matrix into a Hermitian matrix expression
+     *
+     * For a \f$(m\times n)\f$-dimensional matrix, the \c hermitian_adaptor will provide a hermitian matrix.
+     * Storage and location are based on those of the underlying matrix. This is important because
+     * a \c hermitian_adaptor does not copy the matrix data to a new place. Therefore, modifying values
+     * in a \c hermitian_adaptor matrix will also modify the underlying matrix too.
+     *
+     * \tparam M the type of matrix used to generate a hermitian matrix
+     */
     template<class M, class TRI>
     class hermitian_adaptor:
         public matrix_expression<hermitian_adaptor<M, TRI> > {
@@ -1408,7 +1443,9 @@ namespace boost { namespace numeric { namespace ublas {
         BOOST_UBLAS_INLINE
         iterator1 find1 (int rank, size_type i, size_type j) {
             if (rank == 1)
-                i = triangular_type::mutable_restrict1 (i, j);
+                i = triangular_type::mutable_restrict1 (i, j, size1(), size2());
+            if (rank == 0)
+                i = triangular_type::global_mutable_restrict1 (i, size1(), j, size2());
             return iterator1 (*this, data ().find1 (rank, i, j));
         }
         BOOST_UBLAS_INLINE
@@ -1438,7 +1475,9 @@ namespace boost { namespace numeric { namespace ublas {
         BOOST_UBLAS_INLINE
         iterator2 find2 (int rank, size_type i, size_type j) {
             if (rank == 1)
-                j = triangular_type::mutable_restrict2 (i, j);
+                j = triangular_type::mutable_restrict2 (i, j, size1(), size2());
+            if (rank == 0)
+                j = triangular_type::global_mutable_restrict2 (i, size1(), j, size2());
             return iterator2 (*this, data ().find2 (rank, i, j));
         }
 
@@ -1647,6 +1686,10 @@ namespace boost { namespace numeric { namespace ublas {
                         return type_traits<value_type>::conj (*it2_);
                 }
             }
+            BOOST_UBLAS_INLINE
+            const_reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -1811,6 +1854,10 @@ namespace boost { namespace numeric { namespace ublas {
             BOOST_UBLAS_INLINE
             reference operator * () const {
                 return *it1_;
+            }
+            BOOST_UBLAS_INLINE
+            reference operator [] (difference_type n) const {
+                return *(*this + n);
             }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
@@ -2093,6 +2140,10 @@ namespace boost { namespace numeric { namespace ublas {
                         return type_traits<value_type>::conj (*it2_);
                 }
             }
+            BOOST_UBLAS_INLINE
+            const_reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -2258,6 +2309,10 @@ namespace boost { namespace numeric { namespace ublas {
             reference operator * () const {
                 return *it2_;
             }
+            BOOST_UBLAS_INLINE
+            reference operator [] (difference_type n) const {
+                return *(*this + n);
+            }
 
 #ifndef BOOST_UBLAS_NO_NESTED_CLASS_RELATION
             BOOST_UBLAS_INLINE
@@ -2386,9 +2441,15 @@ namespace boost { namespace numeric { namespace ublas {
     template <class M, class TRI>
     struct vector_temporary_traits< hermitian_adaptor<M, TRI> >
     : vector_temporary_traits< M > {} ;
+    template <class M, class TRI>
+    struct vector_temporary_traits< const hermitian_adaptor<M, TRI> >
+    : vector_temporary_traits< M > {} ;
 
     template <class M, class TRI>
     struct matrix_temporary_traits< hermitian_adaptor<M, TRI> >
+    : matrix_temporary_traits< M > {} ;
+    template <class M, class TRI>
+    struct matrix_temporary_traits< const hermitian_adaptor<M, TRI> >
     : matrix_temporary_traits< M > {} ;
 
 }}}
